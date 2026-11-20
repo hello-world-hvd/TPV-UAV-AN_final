@@ -29,7 +29,7 @@ def _label_patch(text, font):
     return cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)
 
 
-def draw_detections(frame, detections, font):
+def draw_detections(frame, detections, font, groups=()):
     # Chỉ sao chép frame BGR; không chuyển toàn ảnh sang RGB/PIL.
     result = frame.copy()
     height, width = result.shape[:2]
@@ -45,4 +45,12 @@ def draw_detections(frame, detections, font):
         patch_height = min(patch.shape[0], height - y)
         patch_width = min(patch.shape[1], width - x)
         result[y:y + patch_height, x:x + patch_width] = patch[:patch_height, :patch_width]
+    for group in groups:
+        x1, y1, x2, y2 = (int(round(value)) for value in group['bbox_xyxy'])
+        cv2.rectangle(result, (x1, y1), (x2, y2), (255, 180, 0), 2)
+        text = f"G{group['group_id']} {group['kind']} ({group['status']})"
+        patch = _label_patch(text, font)
+        x, y = max(0, min(x1, width - 1)), max(0, min(y2 + 2, height - 1))
+        h, w = min(patch.shape[0], height - y), min(patch.shape[1], width - x)
+        result[y:y+h, x:x+w] = patch[:h, :w]
     return result

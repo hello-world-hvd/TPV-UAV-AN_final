@@ -5,6 +5,7 @@ models:
   - ../models/yoloe-sidewalk-extra-v5.engine
 
 inference:
+  parallel_models: true       # Hai TensorRT context chạy trên hai CUDA stream riêng
   device: "0"                 # GPU CUDA đầu tiên trên server
   imgsz: 960                  # Kích thước suy luận, bội số của 32
   confidence: 0.35            # Ngưỡng mặc định

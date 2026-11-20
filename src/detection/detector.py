@@ -1,6 +1,7 @@
 """Nạp hai model YOLOE có sẵn, lọc đúng nhãn yêu cầu và gộp các box trùng cùng nhãn."""
 
 from pathlib import Path
+from threading import Lock
 
 import numpy as np
 from ultralytics import YOLOE, YOLO
@@ -24,6 +25,12 @@ class Detector:
         self.thresholds = config["thresholds"]
         self.minimum_confidence = min([self.confidence, *self.thresholds.values()])
         self.models = []
+        self.parallel_models = inference.get("parallel_models", False)
+        self.parallel = None
+        self.lock = Lock()
+        if self.parallel_models and (not (str(self.device).isdigit() or str(self.device).startswith('cuda'))
+                                     or any(Path(p).suffix != '.engine' for p in config['models'])):
+            raise ValueError('parallel_models chỉ hỗ trợ engine TensorRT trên CUDA.')
         for filename in config["models"]:
             path = Path(filename)
             if not path.is_file():
@@ -38,26 +45,40 @@ class Detector:
                 raise ValueError(f"Model không có nhãn phù hợp: {path}")
             self.models.append((model, mapping))
 
+    def _predict_one(self, model, mapping, frame):
+        kwargs = {"predictor": BoxesOnlyPredictor} if model.task == "segment" else {}
+        result = Model.predict(model,
+            source=frame, device=self.device, imgsz=self.imgsz,
+            rect=self.rect,
+            conf=self.minimum_confidence, iou=self.iou, classes=list(mapping),
+            max_det=self.max_detections,
+            agnostic_nms=False, verbose=False, **kwargs,
+        )[0]
+        return result.boxes.data.cpu().tolist() if result.boxes is not None else []
+
     def detect(self, frame):
-        """Nhận ảnh BGR từ OpenCV; trả nhãn, độ tin cậy và box theo pixel ảnh gốc."""
-        detections = []
-        for model, mapping in self.models:
-            kwargs = {"predictor": BoxesOnlyPredictor} if model.task == "segment" else {}
-            result = Model.predict(model,
-                source=frame, device=self.device, imgsz=self.imgsz,
-                rect=self.rect,
-                conf=self.minimum_confidence, iou=self.iou, classes=list(mapping),
-                max_det=self.max_detections,
-                agnostic_nms=False, verbose=False, **kwargs,
-            )[0]
-            if result.boxes is None:
-                continue
-            for x1, y1, x2, y2, score, index in result.boxes.data.cpu().tolist():
-                label = mapping.get(int(index))
-                if label is not None and score >= self.thresholds.get(label, self.confidence):
-                    detections.append({"label": label, "confidence": float(score),
-                                       "bbox_xyxy": [float(x1), float(y1), float(x2), float(y2)]})
-        return self._merge(detections)
+        """Nhận ảnh BGR; chờ cả hai model hoàn tất rồi mới lọc/gộp box."""
+        with self.lock:
+            if self.parallel_models and self.parallel is None:
+                # Khởi tạo predictor/warmup tuần tự một lần, trước khi dùng context riêng.
+                for model, mapping in self.models:
+                    self._predict_one(model, mapping, frame)
+                from detection.parallel import ParallelEngines
+                self.parallel = ParallelEngines(self.models, self.device)
+            outputs = (self.parallel.predict(frame) if self.parallel_models else
+                       [self._predict_one(model, mapping, frame) for model, mapping in self.models])
+            detections = []
+            for (_, mapping), rows in zip(self.models, outputs):
+                for x1, y1, x2, y2, score, index in rows:
+                    label = mapping.get(int(index))
+                    if label is not None and score >= self.thresholds.get(label, self.confidence):
+                        detections.append({"label": label, "confidence": float(score),
+                                           "bbox_xyxy": [float(x1), float(y1), float(x2), float(y2)]})
+            return self._merge(detections)
+
+    def close(self):
+        if self.parallel is not None:
+            self.parallel.close()
 
     def _merge(self, detections):
         # NMS cùng nhãn theo IoU hoặc độ chứa IoS; ưu tiên confidence cao hơn.

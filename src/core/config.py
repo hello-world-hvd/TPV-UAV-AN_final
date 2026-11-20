@@ -28,6 +28,9 @@ def load_config(path):
         raise ValueError("models phải là danh sách đường dẫn model không rỗng.")
     config["models"] = [resolve(value) for value in models]
     inference = config["inference"]
+    inference.setdefault('parallel_models', False)
+    if type(inference['parallel_models']) is not bool:
+        raise ValueError('parallel_models phải là boolean.')
     detect_fps = inference.get("detect_fps")
     if detect_fps is not None and (isinstance(detect_fps, bool)
             or not isinstance(detect_fps, (int, float))

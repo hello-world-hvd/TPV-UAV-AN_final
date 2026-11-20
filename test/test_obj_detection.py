@@ -17,6 +17,7 @@ from pathlib import Path
 from contextlib import contextmanager
 
 import cv2
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -25,6 +26,7 @@ from detection.detector import Detector
 from detection.render import draw_detections, load_font
 from core.config import load_config, load_tracking_config
 from tracking.tracker import Tracker
+from grouping.groups import Grouper
 from core.timing import DetectorTimer
 from core.video_writer import open_writer, ThreadedWriter
 
@@ -80,6 +82,7 @@ def main():
     parser.add_argument("--input", type=Path, help="Thư mục ảnh hoặc đường dẫn video")
     parser.add_argument("--max-frames", type=int, default=0, help="Giới hạn frame video; 0: toàn bộ")
     parser.add_argument("--config", type=Path, default=root / "configs" / "detection.yaml")
+    parser.add_argument("--grouping-config", type=Path, default=root / "configs" / "grouping.yaml")
     parser.add_argument("--tracking-config", type=Path, default=root / "configs" / "tracking.yaml")
     parser.add_argument("--output", type=Path, help="Ghi đè thư mục đầu ra trong YAML")
     args = parser.parse_args()
@@ -124,6 +127,8 @@ def main():
         else:
             tracking_config = load_tracking_config(args.tracking_config)
             tracker = Tracker(tracking_config) if tracking_config["enabled"] else None
+            group_config = yaml.safe_load(args.grouping_config.read_text(encoding="utf-8"))
+            grouper = Grouper(group_config) if tracker is not None and group_config['enabled'] else None
             stages = StageTimer()
             video_started = time.perf_counter()
             capture = cv2.VideoCapture(str(args.input))
@@ -173,8 +178,12 @@ def main():
                             tracks = tracker.update(frame, index / fps, detections if detector_ran else None)
                     else:
                         tracks = detections
+                    groups = []
+                    if grouper is not None:
+                        with stages.measure("grouping"):
+                            groups = grouper.update(tracks, index / fps, tracker.last_motion)
                     with stages.measure("render"):
-                        rendered = draw_detections(frame, tracks, font)
+                        rendered = draw_detections(frame, tracks, font, groups)
                     with stages.measure("encode_write"):
                         writer.write(rendered)
                     with stages.measure("jsonl"):
@@ -183,6 +192,7 @@ def main():
                                               "detect_ms": detect_seconds * 1000 if detect_seconds is not None else None,
                                               "detection_frame_index": detection_frame_index,
                                               "tracks": tracks if tracker is not None else [],
+                                              "groups": groups,
                                               "detections": detections}, ensure_ascii=False) + "\n")
                     index += 1
                     now = time.perf_counter()
@@ -207,6 +217,8 @@ def main():
                       f" | {step['wall_percent']:5.1f}% | {step['calls']} lượt")
     stats = timer.summary()
     stats["model_load_seconds"] = model_load_seconds
+    detector.close()
+    stats['parallel_models'] = config['inference'].get('parallel_models', False)
     if args.mode == "video":
         stats["video_processing_seconds"] = video_elapsed
         stats["tracking"] = tracking_config

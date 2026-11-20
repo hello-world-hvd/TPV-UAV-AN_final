@@ -18,5 +18,5 @@ py-modules = ["main"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["core", "core.*", "pipeline", "pipeline.*", "detection", "detection.*", "configs", "configs.*", "tracking", "tracking.*"]
+include = ["core", "core.*", "pipeline", "pipeline.*", "detection", "detection.*", "configs", "configs.*", "tracking", "tracking.*", "grouping", "grouping.*"]
 namespaces = false

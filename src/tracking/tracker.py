@@ -56,6 +56,7 @@ class Tracker:
                  if timestamp - t["last_seen"] <= self.config["max_prediction_seconds"]}
         motion = self.motion.update(frame, boxes, foreground_flow=detections is None) if self.config["camera_motion"] else {
             "scene_cut": False, "reliable": False, "local_boxes": {}}
+        self.last_motion = motion
         if motion["scene_cut"]:
             self.tracks.clear()
         self.tracks = [t for t in self.tracks if timestamp - t["last_seen"] <= self.config["max_lost_seconds"]]
@@ -96,6 +97,7 @@ class Tracker:
                     residual = np.eye(8)
                     residual[:, :4] -= gain
                     t["p"] = residual @ t["p"] @ residual.T + 4 * gain @ gain.T
+                    t["observed_bbox"] = list(row["bbox_xyxy"])
                     t.update(last_seen=timestamp, confidence=row["confidence"], source="detection", hits=t["hits"] + 1)
                     t["confirmed"] = t["confirmed"] or t["hits"] >= self.config["min_hits"]
                     matched_tracks.add(i)
@@ -109,7 +111,7 @@ class Tracker:
                 self.tracks.append({"id": self.next_id, "label": row["label"],
                                     "x": np.r_[measurement(row["bbox_xyxy"]), np.zeros(4)], "p": np.eye(8) * 10,
                                     "last_seen": timestamp, "hits": 1, "confirmed": self.config["min_hits"] == 1,
-                                    "confidence": row["confidence"], "source": "detection"})
+                                    "confidence": row["confidence"], "observed_bbox": list(row["bbox_xyxy"]), "source": "detection"})
                 self.next_id += 1
         output = []
         height, width = frame.shape[:2]
@@ -121,5 +123,6 @@ class Tracker:
             if np.any(box[2:] <= box[:2]) or not np.isfinite(box).all():
                 continue
             output.append({"track_id": t["id"], "label": t["label"], "confidence": t["confidence"],
-                           "bbox_xyxy": box.tolist(), "position_source": t["source"], "detection_age_seconds": age})
+                           "bbox_xyxy": box.tolist(), "position_source": t["source"], "detection_age_seconds": age,
+                           "observed_bbox_xyxy": t["observed_bbox"]})
         return output

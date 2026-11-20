@@ -1,0 +1,17 @@
+# Gộp quan hệ không gian theo track; ngưỡng khoảng cách chuẩn hoá, không phải mét.
+enabled: true
+confirm_seconds: 0.4
+max_observation_age: 0.5
+object_gap_ratio: 0.5
+cluster_span_ratio: 4.0
+person_gap_height_ratio: 0.5
+stationary_seconds: 2.0
+stationary_displacement_ratio: 0.15
+attachment_gap_ratio: 0.15
+
+# Khoảng ghép ghế rộng hơn nhưng vẫn bị giới hạn bởi tâm bàn và đường kính cụm.
+chair_gap_ratio: 1.5
+person_confirm_seconds: 1.0
+person_foot_height_ratio: 1.5  # Nới cho người ngồi; khoảng cách tính tới từng vật.
+stationary_step_ratio: 0.1   # Giới hạn dịch chuyển mỗi lần quan sát sau bù camera.
+stationary_path_ratio: 0.3   # Tổng đường đi chuẩn hoá; chặn đi rồi quay lại neo.
