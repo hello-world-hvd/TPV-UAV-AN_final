@@ -1,0 +1,33 @@
+# Thiết lập model, tham số suy luận và ngưỡng nhận diện của hệ thống.
+# Đường dẫn tương đối được tính từ thư mục chứa file này.
+models:
+  - ../models/yoloe-v8s-single.pt
+  - ../models/yoloe-sidewalk-extra-v5.pt
+
+inference:
+  device: mps                 # cpu hoặc "0" cho GPU CUDA đầu tiên
+  imgsz: 960                  # Kích thước suy luận, bội số của 32
+  confidence: 0.35            # Ngưỡng mặc định
+  nms_iou: 0.5                # Ngưỡng loại box trùng trong từng model
+  merge_iou: 0.5              # Ngưỡng gộp box cùng nhãn giữa các model
+  max_detections: 300         # Số box tối đa của mỗi model trên một ảnh
+  detect_fps: 2               # Số lần detect mỗi giây video nguồn; null: detect mọi frame
+
+# Ngưỡng riêng cho đúng 12 nhãn yêu cầu.
+thresholds:
+  người: 0.4
+  xe máy: 0.35
+  bàn nhựa: 0.35
+  ghế nhựa: 0.35
+  xe đẩy bán hàng: 0.3
+  biển quảng cáo: 0.45       
+  cột điện: 0.35
+  thân cây: 0.35
+  hàng hoá: 0.45
+  vật liệu xây dựng: 0.35     # Chỉ nhận đống gạch / gạch xếp chồng
+  xô chậu: 0.35
+  xe chở rác: 0.35
+
+output:
+  directory: ../outputs/detect
+  font: null                  # null: tự tìm font Unicode; hoặc đường dẫn file .ttf
