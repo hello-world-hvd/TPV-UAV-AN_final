@@ -14,6 +14,7 @@ import math
 import sys
 import time
 from pathlib import Path
+from contextlib import contextmanager
 
 import cv2
 
@@ -23,9 +24,32 @@ sys.path.insert(0, str(ROOT / "src"))
 from detection.detector import Detector
 from detection.render import draw_detections, load_font
 from core.config import load_config
+from core.timing import DetectorTimer
 
 
-def show_progress(index, total, detect_count, started, final=False):
+class StageTimer:
+    """Cộng thời gian và số lượt từng bước, bao gồm bước đóng video để hoàn tất file."""
+
+    def __init__(self):
+        self.steps = {}
+
+    @contextmanager
+    def measure(self, name):
+        started = time.perf_counter()
+        try:
+            yield
+        finally:
+            step = self.steps.setdefault(name, {"seconds": 0.0, "calls": 0})
+            step["seconds"] += time.perf_counter() - started
+            step["calls"] += 1
+
+    def summary(self, elapsed):
+        return {name: {**step, "average_ms": step["seconds"] / step["calls"] * 1000,
+                       "wall_percent": step["seconds"] / elapsed * 100 if elapsed else 0}
+                for name, step in self.steps.items()}
+
+
+def show_progress(index, total, detect_count, started, timer, stages, final=False):
     """In tiến trình theo frame đã ghi, tốc độ thực tế và thời gian còn lại ước tính."""
     elapsed = max(time.perf_counter() - started, 1e-9)
     speed = index / elapsed
@@ -36,7 +60,13 @@ def show_progress(index, total, detect_count, started, final=False):
         eta = f"{remaining:.0f}s"
     else:
         progress, eta = f"{index} frame", "chưa rõ"
+    stats = timer.summary()
+    average_ms = stats["average_detect_ms"] or 0
+    detector_fps = stats["detector_fps"] or 0
+    slowest = max(stages.steps, key=lambda name: stages.steps[name]["seconds"], default="-")
     print(f"\r{progress} | Detect: {detect_count} lượt | Xử lý: {speed:.2f} FPS"
+          f" | Detector TB: {average_ms:.1f} ms/lượt ({detector_fps:.2f} FPS)"
+          f" | Bước tốn thời gian nhất: {slowest}"
           f" | Đã chạy: {elapsed:.1f}s | Còn lại ~{eta}",
           end="\n" if final else "", flush=True)
 
@@ -68,7 +98,11 @@ def main():
     config = load_config(args.config)
     args.output = args.output or config["output"]["directory"] / args.mode
     font = load_font(config["output"]["font"])
+    model_started = time.perf_counter()
     detector = Detector(config)
+    model_load_seconds = time.perf_counter() - model_started
+    print(f"Nạp model: {model_load_seconds:.2f}s (tách riêng thời gian xử lý)")
+    timer = DetectorTimer(config["inference"]["device"])
     args.output.mkdir(parents=True, exist_ok=True)
     with (args.output / "detections.jsonl").open("w", encoding="utf-8") as records:
         if args.mode == "images":
@@ -76,14 +110,17 @@ def main():
                 image = cv2.imread(str(path))
                 if image is None:
                     raise ValueError(f"Không đọc được ảnh: {path}")
-                detections = detector.detect(image)
+                detections, detect_seconds = timer.detect(detector, image)
                 rendered = draw_detections(image, detections, font)
                 output_path = args.output / f"{path.name}.detected.jpg"
                 if not cv2.imwrite(str(output_path), rendered):
                     raise RuntimeError(f"Không ghi được ảnh: {output_path}")
-                records.write(json.dumps({"source": str(path), "detections": detections}, ensure_ascii=False) + "\n")
-                print(f"{path.name}: {len(detections)} đối tượng")
+                records.write(json.dumps({"source": str(path), "detect_ms": detect_seconds * 1000,
+                                          "detections": detections}, ensure_ascii=False) + "\n")
+                print(f"{path.name}: {len(detections)} đối tượng | Detector: {detect_seconds * 1000:.1f} ms")
         else:
+            stages = StageTimer()
+            video_started = time.perf_counter()
             capture = cv2.VideoCapture(str(args.input))
             writer = None
             try:
@@ -107,41 +144,70 @@ def main():
                 detection_frame_index = 0
                 detections = []
                 while args.max_frames == 0 or index < args.max_frames:
-                    ok, frame = capture.read()
+                    with stages.measure("decode"):
+                        ok, frame = capture.read()
                     if not ok:
                         break
                     if writer is None:
                         height, width = frame.shape[:2]
-                        writer = cv2.VideoWriter(str(args.output / "detected.mp4"),
+                        with stages.measure("open_writer"):
+                            writer = cv2.VideoWriter(str(args.output / "detected.mp4"),
                                                  cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
                         if not writer.isOpened():
                             raise RuntimeError("Không mở được bộ ghi video.")
                     # Lập lịch theo thời gian video, không theo tốc độ xử lý của máy.
                     slot = int(index * detect_fps / fps + 1e-9)
                     detector_ran = slot > last_slot
+                    detect_seconds = None
                     if detector_ran:
-                        detections = detector.detect(frame)
+                        with stages.measure("detect"):
+                            detections, detect_seconds = timer.detect(detector, frame)
                         detect_count += 1
                         detection_frame_index = index
                         last_slot = slot
                     # Vẽ box cũ lên frame hiện tại; lần detect rỗng sẽ xóa các box cũ.
-                    writer.write(draw_detections(frame, detections, font))
-                    records.write(json.dumps({"frame_index": index, "timestamp_seconds": index / fps,
+                    with stages.measure("render"):
+                        rendered = draw_detections(frame, detections, font)
+                    with stages.measure("encode_write"):
+                        writer.write(rendered)
+                    with stages.measure("jsonl"):
+                        records.write(json.dumps({"frame_index": index, "timestamp_seconds": index / fps,
                                               "detector_ran": detector_ran,
+                                              "detect_ms": detect_seconds * 1000 if detect_seconds is not None else None,
                                               "detection_frame_index": detection_frame_index,
                                               "detections": detections}, ensure_ascii=False) + "\n")
                     index += 1
                     now = time.perf_counter()
                     if now - last_report >= 1:
-                        show_progress(index, total, detect_count, started)
+                        show_progress(index, total, detect_count, started, timer, stages)
                         last_report = now
                 if index == 0:
                     raise ValueError("Video không có frame đọc được.")
-                show_progress(index, total, detect_count, started, final=True)
+                show_progress(index, total, detect_count, started, timer, stages, final=True)
             finally:
-                capture.release()
-                if writer is not None:
-                    writer.release()
+                with stages.measure("finalize_video"):
+                    capture.release()
+                    if writer is not None:
+                        writer.release()
+                with stages.measure("flush_jsonl"):
+                    records.flush()
+            video_elapsed = time.perf_counter() - video_started
+            stage_stats = stages.summary(video_elapsed)
+            print("\nThời gian từng bước (TB tính trên số lượt thực hiện của bước):")
+            for name, step in sorted(stage_stats.items(), key=lambda item: item[1]["seconds"], reverse=True):
+                print(f"  {name:16s}: {step['seconds']:8.3f}s | {step['average_ms']:8.2f} ms/lượt"
+                      f" | {step['wall_percent']:5.1f}% | {step['calls']} lượt")
+    stats = timer.summary()
+    stats["model_load_seconds"] = model_load_seconds
+    if args.mode == "video":
+        stats["video_processing_seconds"] = video_elapsed
+        stats["stages"] = stage_stats
+        stats["other_seconds"] = max(0, video_elapsed - sum(step["seconds"] for step in stage_stats.values()))
+    (args.output / "timing.json").write_text(json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"Detector [{stats['device']}]: {stats['average_detect_ms']:.1f} ms/lượt"
+          f" | {stats['detector_fps']:.2f} FPS | Lượt đầu: {stats['first_detect_ms']:.1f} ms")
+    if stats["average_detect_ms_excluding_first"] is not None:
+        print(f"Detector TB bỏ lượt đầu: {stats['average_detect_ms_excluding_first']:.1f} ms/lượt")
     print(f"Đã lưu kết quả: {args.output.resolve()}")
 
 
