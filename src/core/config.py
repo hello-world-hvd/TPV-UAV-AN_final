@@ -36,6 +36,9 @@ def load_config(path):
     inference["detect_fps"] = detect_fps
     for name in ("confidence", "nms_iou", "merge_iou"):
         _threshold(inference.get(name), name)
+    inference.setdefault("merge_ios", 0.9)
+    if inference["merge_ios"] is not None:
+        _threshold(inference["merge_ios"], "merge_ios")
     for name in ("imgsz", "max_detections"):
         value = inference.get(name)
         if type(value) is not int or value <= 0:
@@ -74,3 +77,24 @@ def load_config(path):
 def _threshold(value, name):
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 < value <= 1:
         raise ValueError(f"{name} phải là số thuộc khoảng (0, 1].")
+
+
+def load_tracking_config(path):
+    """Đọc cấu hình tracking riêng và kiểm tra các giới hạn thời gian/ghép box."""
+    config = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(config, dict):
+        raise ValueError("Cấu hình tracking phải là mapping.")
+    for name in ("enabled", "camera_motion"):
+        if type(config.get(name)) is not bool:
+            raise ValueError(f"{name} phải là boolean.")
+    for name in ("min_hits", "motion_max_side", "flow_refresh_interval"):
+        if type(config.get(name)) is not int or config[name] < 1:
+            raise ValueError(f"{name} phải là số nguyên dương.")
+    for name in ("max_lost_seconds", "max_prediction_seconds", "max_center_distance"):
+        value = config.get(name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            raise ValueError(f"{name} phải là số dương hữu hạn.")
+    _threshold(config.get("min_iou"), "min_iou")
+    if config["max_prediction_seconds"] > config["max_lost_seconds"]:
+        raise ValueError("max_prediction_seconds phải <= max_lost_seconds.")
+    return config

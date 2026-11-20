@@ -10,6 +10,7 @@ inference:
   confidence: 0.35            # Ngưỡng mặc định
   nms_iou: 0.5                # Ngưỡng loại box trùng trong từng model
   merge_iou: 0.5              # Ngưỡng gộp box cùng nhãn giữa các model
+  merge_ios: 0.9              # Lọc box chứa nhau cùng nhãn, giữ điểm cao hơn; null để tắt
   max_detections: 300         # Số box tối đa của mỗi model trên một ảnh
   detect_fps: 2               # Số lần detect mỗi giây video nguồn; null: detect mọi frame
 

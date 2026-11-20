@@ -37,7 +37,7 @@ PHRASE_LABELS = {
     'tree stem': 'thân cây',
     'basket of fruit': 'hàng hoá',
     'crate of vegetables': 'hàng hoá',
-    'packaged products': 'hàng hoá',
+    # 'packaged products': 'hàng hoá',
     'fruit crate': 'hàng hoá',
     'stacked packaged goods': 'hàng hoá',
     'cardboard box': 'hàng hoá',

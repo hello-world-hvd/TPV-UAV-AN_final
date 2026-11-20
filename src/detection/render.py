@@ -36,6 +36,8 @@ def draw_detections(frame, detections, font):
     for row in detections:
         x1, y1, x2, y2 = (int(round(value)) for value in row["bbox_xyxy"])
         text = f'{row["label"]} {row["confidence"]:.2f}'
+        if "track_id" in row:
+            text = f'#{row["track_id"]} {text}'
         cv2.rectangle(result, (x1, y1), (x2, y2), (0, 255, 0), 2)
         patch = _label_patch(text, font)
         x = max(0, min(x1, width - 1))

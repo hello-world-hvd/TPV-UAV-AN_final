@@ -23,7 +23,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from detection.detector import Detector
 from detection.render import draw_detections, load_font
-from core.config import load_config
+from core.config import load_config, load_tracking_config
+from tracking.tracker import Tracker
 from core.timing import DetectorTimer
 from core.video_writer import open_writer, ThreadedWriter
 
@@ -79,6 +80,7 @@ def main():
     parser.add_argument("--input", type=Path, help="Thư mục ảnh hoặc đường dẫn video")
     parser.add_argument("--max-frames", type=int, default=0, help="Giới hạn frame video; 0: toàn bộ")
     parser.add_argument("--config", type=Path, default=root / "configs" / "detection.yaml")
+    parser.add_argument("--tracking-config", type=Path, default=root / "configs" / "tracking.yaml")
     parser.add_argument("--output", type=Path, help="Ghi đè thư mục đầu ra trong YAML")
     args = parser.parse_args()
     if args.max_frames < 0:
@@ -120,6 +122,8 @@ def main():
                                           "detections": detections}, ensure_ascii=False) + "\n")
                 print(f"{path.name}: {len(detections)} đối tượng | Detector: {detect_seconds * 1000:.1f} ms")
         else:
+            tracking_config = load_tracking_config(args.tracking_config)
+            tracker = Tracker(tracking_config) if tracking_config["enabled"] else None
             stages = StageTimer()
             video_started = time.perf_counter()
             capture = cv2.VideoCapture(str(args.input))
@@ -164,9 +168,13 @@ def main():
                         detect_count += 1
                         detection_frame_index = index
                         last_slot = slot
-                    # Vẽ box cũ lên frame hiện tại; lần detect rỗng sẽ xóa các box cũ.
+                    if tracker is not None:
+                        with stages.measure("tracking"):
+                            tracks = tracker.update(frame, index / fps, detections if detector_ran else None)
+                    else:
+                        tracks = detections
                     with stages.measure("render"):
-                        rendered = draw_detections(frame, detections, font)
+                        rendered = draw_detections(frame, tracks, font)
                     with stages.measure("encode_write"):
                         writer.write(rendered)
                     with stages.measure("jsonl"):
@@ -174,6 +182,7 @@ def main():
                                               "detector_ran": detector_ran,
                                               "detect_ms": detect_seconds * 1000 if detect_seconds is not None else None,
                                               "detection_frame_index": detection_frame_index,
+                                              "tracks": tracks if tracker is not None else [],
                                               "detections": detections}, ensure_ascii=False) + "\n")
                     index += 1
                     now = time.perf_counter()
@@ -200,6 +209,7 @@ def main():
     stats["model_load_seconds"] = model_load_seconds
     if args.mode == "video":
         stats["video_processing_seconds"] = video_elapsed
+        stats["tracking"] = tracking_config
         stats["processing_fps_including_finalize"] = index / video_elapsed
         stats["output_video_bytes"] = (args.output / "detected.mp4").stat().st_size
         stats["video_encoder"] = config["output"]["video"]

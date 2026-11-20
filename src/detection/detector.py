@@ -17,6 +17,7 @@ class Detector:
         self.confidence = inference["confidence"]
         self.iou = inference["nms_iou"]
         self.merge_iou = inference["merge_iou"]
+        self.merge_ios = inference.get("merge_ios", 0.9)
         self.imgsz = inference["imgsz"]
         self.rect = inference.get("rect", True)
         self.max_detections = inference["max_detections"]
@@ -59,7 +60,7 @@ class Detector:
         return self._merge(detections)
 
     def _merge(self, detections):
-        # NMS theo nhãn tiếng Việt vì nhiều cụm từ/model có thể nhận cùng một vật.
+        # NMS cùng nhãn theo IoU hoặc độ chứa IoS; ưu tiên confidence cao hơn.
         kept = []
         for candidate in sorted(detections, key=lambda row: row["confidence"], reverse=True):
             box = np.asarray(candidate["bbox_xyxy"])
@@ -70,8 +71,13 @@ class Detector:
                 other = np.asarray(previous["bbox_xyxy"])
                 overlap = np.maximum(0, np.minimum(box[2:], other[2:]) - np.maximum(box[:2], other[:2]))
                 intersection = float(np.prod(overlap))
-                union = float(np.prod(box[2:] - box[:2]) + np.prod(other[2:] - other[:2]) - intersection)
-                if union > 0 and intersection / union > self.merge_iou:
+                area = float(np.prod(np.maximum(0, box[2:] - box[:2])))
+                other_area = float(np.prod(np.maximum(0, other[2:] - other[:2])))
+                union = area + other_area - intersection
+                smaller_area = min(area, other_area)
+                contained = (self.merge_ios is not None and smaller_area > 0
+                             and intersection / smaller_area >= self.merge_ios)
+                if (union > 0 and intersection / union > self.merge_iou) or contained:
                     duplicate = True
                     break
             if not duplicate:

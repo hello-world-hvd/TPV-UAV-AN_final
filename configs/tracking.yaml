@@ -1,0 +1,10 @@
+# Theo dõi trên từng frame; thời gian tính theo timestamp video, không theo tốc độ máy.
+enabled: true
+min_hits: 2                    # Số lần detect liên tiếp để xác nhận ID
+max_lost_seconds: 1.5          # Giữ ID để ghép lại khi mất dấu ngắn
+max_prediction_seconds: 0.75   # Chỉ vẽ bbox dự đoán tối đa từng này giây từ detection cuối
+camera_motion: true
+motion_max_side: 480           # Thu nhỏ ảnh để tính optical flow nhẹ hơn
+flow_refresh_interval: 6
+min_iou: 0.1
+max_center_distance: 0.75      # Khoảng cách tâm chia cho đường chéo bbox
