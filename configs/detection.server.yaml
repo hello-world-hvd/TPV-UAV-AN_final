@@ -1,8 +1,8 @@
 # Thiết lập model, tham số suy luận và ngưỡng nhận diện của hệ thống.
 # Đường dẫn tương đối được tính từ thư mục chứa file này.
 models:
-  - ../models/yoloe-v8s-single.pt
-  - ../models/yoloe-sidewalk-extra-v5.pt
+  - ../models/yoloe-v8s-single.engine
+  - ../models/yoloe-sidewalk-extra-v5.engine
 
 inference:
   device: "0"                 # GPU CUDA đầu tiên trên server
@@ -31,3 +31,11 @@ thresholds:
 output:
   directory: ../outputs/detect
   font: null                  # null: tự tìm font Unicode; hoặc đường dẫn file .ttf
+
+  video:
+    encoder: nvenc
+    preset: p1                # p1 ưu tiên tốc độ; p7 ưu tiên chất lượng
+    cq: 20                    # Giá trị thấp hơn tăng chất lượng và dung lượng
+    async_encode: true
+    queue_size: 2             # Chờ khi đầy; không bỏ frame
+    ffmpeg: ../.tools/nvenc/bin/ffmpeg

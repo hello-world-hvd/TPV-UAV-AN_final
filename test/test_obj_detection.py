@@ -25,6 +25,7 @@ from detection.detector import Detector
 from detection.render import draw_detections, load_font
 from core.config import load_config
 from core.timing import DetectorTimer
+from core.video_writer import open_writer, ThreadedWriter
 
 
 class StageTimer:
@@ -151,10 +152,8 @@ def main():
                     if writer is None:
                         height, width = frame.shape[:2]
                         with stages.measure("open_writer"):
-                            writer = cv2.VideoWriter(str(args.output / "detected.mp4"),
-                                                 cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
-                        if not writer.isOpened():
-                            raise RuntimeError("Không mở được bộ ghi video.")
+                            writer = open_writer(args.output / "detected.mp4", fps, (width, height),
+                                                 config["output"]["video"])
                     # Lập lịch theo thời gian video, không theo tốc độ xử lý của máy.
                     slot = int(index * detect_fps / fps + 1e-9)
                     detector_ran = slot > last_slot
@@ -201,6 +200,14 @@ def main():
     stats["model_load_seconds"] = model_load_seconds
     if args.mode == "video":
         stats["video_processing_seconds"] = video_elapsed
+        stats["processing_fps_including_finalize"] = index / video_elapsed
+        stats["output_video_bytes"] = (args.output / "detected.mp4").stat().st_size
+        stats["video_encoder"] = config["output"]["video"]
+        if isinstance(writer, ThreadedWriter):
+            stats["encoder_worker"] = {"write_seconds": writer.write_seconds,
+                                       "frames_written": writer.frames_written}
+            print("encode_write = đẩy/chờ hàng đợi; finalize_video gồm chờ worker và FFmpeg ghi hết.")
+        print(f"Tổng kể cả hoàn tất file: {video_elapsed:.2f}s | {index / video_elapsed:.2f} FPS")
         stats["stages"] = stage_stats
         stats["other_seconds"] = max(0, video_elapsed - sum(step["seconds"] for step in stage_stats.values()))
     (args.output / "timing.json").write_text(json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")

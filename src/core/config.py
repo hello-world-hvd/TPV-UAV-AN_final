@@ -52,6 +52,22 @@ def load_config(path):
     config["output"]["directory"] = resolve(config["output"].get("directory"))
     font = config["output"].get("font")
     config["output"]["font"] = resolve(font) if font is not None else None
+    video = config["output"].setdefault("video", {})
+    if not isinstance(video, dict):
+        raise ValueError("output.video phải là mapping.")
+    defaults = {"encoder": "opencv", "async_encode": False, "queue_size": 2, "preset": "p1", "cq": 20}
+    for key, value in defaults.items():
+        video.setdefault(key, value)
+    if video["encoder"] not in ("opencv", "nvenc"):
+        raise ValueError("encoder phải là opencv hoặc nvenc.")
+    if type(video["async_encode"]) is not bool or type(video["queue_size"]) is not int or not 1 <= video["queue_size"] <= 8:
+        raise ValueError("async_encode phải là boolean; queue_size phải thuộc 1..8.")
+    if video["preset"] not in {f"p{i}" for i in range(1, 8)}:
+        raise ValueError("NVENC preset phải thuộc p1..p7.")
+    if type(video["cq"]) is not int or not 0 <= video["cq"] <= 51:
+        raise ValueError("NVENC cq phải là số nguyên thuộc 0..51.")
+    if video.get("ffmpeg") is not None:
+        video["ffmpeg"] = str(resolve(video["ffmpeg"]))
     return config
 
 

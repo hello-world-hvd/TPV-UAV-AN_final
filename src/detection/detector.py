@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import numpy as np
-from ultralytics import YOLOE
+from ultralytics import YOLOE, YOLO
 from ultralytics.engine.model import Model
 
 from detection.labels import PHRASE_LABELS
@@ -18,6 +18,7 @@ class Detector:
         self.iou = inference["nms_iou"]
         self.merge_iou = inference["merge_iou"]
         self.imgsz = inference["imgsz"]
+        self.rect = inference.get("rect", True)
         self.max_detections = inference["max_detections"]
         self.thresholds = config["thresholds"]
         self.minimum_confidence = min([self.confidence, *self.thresholds.values()])
@@ -26,7 +27,8 @@ class Detector:
             path = Path(filename)
             if not path.is_file():
                 raise FileNotFoundError(f"Không tìm thấy model: {path}")
-            model = YOLOE(str(path))
+            # Engine giữ nguyên metadata tên lớp và dùng hậu xử lý box giống bản .pt.
+            model = YOLO(str(path), task="detect") if path.suffix == ".engine" else YOLOE(str(path))
             names = model.names
             names = names if isinstance(names, dict) else dict(enumerate(names))
             mapping = {int(index): PHRASE_LABELS[name] for index, name in names.items()
@@ -42,6 +44,7 @@ class Detector:
             kwargs = {"predictor": BoxesOnlyPredictor} if model.task == "segment" else {}
             result = Model.predict(model,
                 source=frame, device=self.device, imgsz=self.imgsz,
+                rect=self.rect,
                 conf=self.minimum_confidence, iou=self.iou, classes=list(mapping),
                 max_det=self.max_detections,
                 agnostic_nms=False, verbose=False, **kwargs,
