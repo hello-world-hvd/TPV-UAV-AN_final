@@ -1,0 +1,9 @@
+# Phân loại crop người–xe bằng MobileNetV3; tên cảnh báo khác lấy theo thành phần nhóm.
+enabled: true
+weights: ../models/mobilenetv3_three_classes_tight_camera_20261116.pt
+metadata: ../models/mobilenetv3_three_classes_tight_camera_20261116.json
+confidence_threshold: 0.75   # Xác suất lớp sửa/rửa xe tối thiểu.
+min_margin: 0.2              # Chênh xác suất hai lớp cao nhất tối thiểu.
+sample_interval_seconds: 0.25 # Chu kỳ phân loại theo thời gian video.
+max_result_age_seconds: 0.75 # Hết hạn kết quả cũ nếu chưa có quan sát mới.
+crop_padding_ratio: 0.1      # Mở rộng crop nhóm 10% mỗi chiều trước letterbox.

@@ -22,34 +22,34 @@ ghế nhựa:
   max_height_ratio: 0.5
   max_area_ratio: 0.08
 xe đẩy bán hàng:
-  max_width_ratio: 0.55
-  max_height_ratio: 0.65
+  max_width_ratio: 0.5
+  max_height_ratio: 0.55
   max_area_ratio: 0.2
 biển quảng cáo:
-  max_width_ratio: 0.75
-  max_height_ratio: 0.85
+  max_width_ratio: 0.6
+  max_height_ratio: 0.7
   max_area_ratio: 0.35
 cột điện:
-  max_width_ratio: 0.4
-  max_height_ratio: 1.0
+  max_width_ratio: 0.3
+  max_height_ratio: 0.8
   max_area_ratio: 0.2
 thân cây:
-  max_width_ratio: 0.5
-  max_height_ratio: 1.0
+  max_width_ratio: 0.3
+  max_height_ratio: 0.8
   max_area_ratio: 0.25
 hàng hoá:
-  max_width_ratio: 0.6
-  max_height_ratio: 0.65
+  max_width_ratio: 0.4
+  max_height_ratio: 0.45
   max_area_ratio: 0.2
 vật liệu xây dựng:
-  max_width_ratio: 0.6
-  max_height_ratio: 0.65
+  max_width_ratio: 0.4
+  max_height_ratio: 0.4
   max_area_ratio: 0.2
 xô chậu:
   max_width_ratio: 0.3
   max_height_ratio: 0.4
   max_area_ratio: 0.06
 xe chở rác:
-  max_width_ratio: 0.8
-  max_height_ratio: 0.8
+  max_width_ratio: 0.5
+  max_height_ratio: 0.5
   max_area_ratio: 0.4

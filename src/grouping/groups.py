@@ -103,6 +103,8 @@ class Grouper:
                 if supports:
                     support = min(supports, key=lambda item: item[:2])[2]
                     add('biển treo trên cây hoặc cột ứng viên', [row, support], tid, False)
+                else:
+                    add('biển quảng cáo', [row], tid, False)
 
         # Một người chỉ ghép vào một nhóm gần nhất; không dùng người làm cầu nối cụm.
         next_links = {key: value for key, value in self.person_links.items()

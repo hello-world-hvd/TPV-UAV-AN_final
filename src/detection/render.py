@@ -29,7 +29,7 @@ def _label_patch(text, font):
     return cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)
 
 
-def draw_detections(frame, detections, font, groups=()):
+def draw_detections(frame, detections, font, groups=(), group_ids_only=False):
     # Chỉ sao chép frame BGR; không chuyển toàn ảnh sang RGB/PIL.
     result = frame.copy()
     height, width = result.shape[:2]
@@ -60,7 +60,13 @@ def draw_detections(frame, detections, font, groups=()):
     for group in groups:
         x1, y1, x2, y2 = (int(round(value)) for value in group['bbox_xyxy'])
         cv2.rectangle(result, (x1, y1), (x2, y2), (255, 180, 0), 2)
-        text = f"G{group['group_id']} {group['kind']} ({group['status']})"
+        behaviors = group.get('behaviors', [])
+        description = '; '.join(r['name'] for r in behaviors) if behaviors else group['kind']
+        text = f"G{group['group_id']} {description} ({'nghi vấn' if behaviors else group['status']})"
+        if group_ids_only:
+            # Một bbox/nhóm: G khi chưa có hành vi; B khi đã gán cảnh báo hành vi.
+            text = (f"B{group['group_id']} {description} (nghi vấn)" if behaviors
+                    else f"G{group['group_id']}")
         patch = _label_patch(text, font)
         x, y = max(0, min(x1, width - 1)), max(0, min(y2 + 2, height - 1))
         h, w = min(patch.shape[0], height - y), min(patch.shape[1], width - x)

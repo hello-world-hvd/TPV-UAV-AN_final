@@ -27,6 +27,7 @@ from detection.render import draw_detections, load_font
 from core.config import load_config, load_tracking_config
 from tracking.tracker import Tracker
 from grouping.groups import Grouper
+from behavior.engine import BehaviorEngine
 from core.timing import DetectorTimer
 from core.video_writer import open_writer, ThreadedWriter
 
@@ -78,11 +79,13 @@ def show_progress(index, total, detect_count, started, timer, stages, final=Fals
 def main():
     root = ROOT
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--visualization', choices=['all', 'group_ids'], default='all')
     parser.add_argument("--mode", required=True, choices=["images", "video"])
     parser.add_argument("--input", type=Path, help="Thư mục ảnh hoặc đường dẫn video")
     parser.add_argument("--max-frames", type=int, default=0, help="Giới hạn frame video; 0: toàn bộ")
     parser.add_argument("--config", type=Path, default=root / "configs" / "detection.yaml")
     parser.add_argument("--grouping-config", type=Path, default=root / "configs" / "grouping.yaml")
+    parser.add_argument("--behavior-config", type=Path, default=root / "configs" / "behavior.yaml")
     parser.add_argument("--tracking-config", type=Path, default=root / "configs" / "tracking.yaml")
     parser.add_argument("--output", type=Path, help="Ghi đè thư mục đầu ra trong YAML")
     args = parser.parse_args()
@@ -129,6 +132,7 @@ def main():
             tracker = Tracker(tracking_config) if tracking_config["enabled"] else None
             group_config = yaml.safe_load(args.grouping_config.read_text(encoding="utf-8"))
             grouper = Grouper(group_config) if tracker is not None and group_config['enabled'] else None
+            behavior = BehaviorEngine(args.behavior_config, config['inference']['device']) if grouper else None
             stages = StageTimer()
             video_started = time.perf_counter()
             capture = cv2.VideoCapture(str(args.input))
@@ -182,8 +186,12 @@ def main():
                     if grouper is not None:
                         with stages.measure("grouping"):
                             groups = grouper.update(tracks, index / fps, tracker.last_motion)
+                    if behavior is not None:
+                        with stages.measure('behavior'):
+                            behavior.update(frame, tracks, groups, index / fps)
                     with stages.measure("render"):
-                        rendered = draw_detections(frame, tracks, font, groups)
+                        rendered = draw_detections(frame, [] if args.visualization == 'group_ids' else tracks,
+                                                   font, groups, group_ids_only=args.visualization == 'group_ids')
                     with stages.measure("encode_write"):
                         writer.write(rendered)
                     with stages.measure("jsonl"):
