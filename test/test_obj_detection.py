@@ -30,6 +30,7 @@ from grouping.groups import Grouper
 from behavior.engine import BehaviorEngine
 from core.timing import DetectorTimer
 from core.video_writer import open_writer, ThreadedWriter
+from alerts.manager import AlertManager
 
 
 class StageTimer:
@@ -80,6 +81,10 @@ def main():
     root = ROOT
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--visualization', choices=['all', 'group_ids'], default='all')
+    parser.add_argument('--alerts', action='store_true', help='Xuất ảnh, clip và metadata cảnh báo')
+    parser.add_argument('--alert-config', type=Path, default=root / 'configs' / 'alerts.yaml')
+    parser.add_argument('--save-video', action=argparse.BooleanOptionalAction, default=True,
+                        help='Lưu video tổng và clip; tắt vẫn lưu ảnh/metadata cảnh báo')
     parser.add_argument("--mode", required=True, choices=["images", "video"])
     parser.add_argument("--input", type=Path, help="Thư mục ảnh hoặc đường dẫn video")
     parser.add_argument("--max-frames", type=int, default=0, help="Giới hạn frame video; 0: toàn bộ")
@@ -133,6 +138,9 @@ def main():
             group_config = yaml.safe_load(args.grouping_config.read_text(encoding="utf-8"))
             grouper = Grouper(group_config) if tracker is not None and group_config['enabled'] else None
             behavior = BehaviorEngine(args.behavior_config, config['inference']['device']) if grouper else None
+            alerts = AlertManager(args.output, args.alert_config, args.save_video) if args.alerts else None
+            if alerts is not None and behavior is None:
+                parser.error('Cảnh báo yêu cầu bật tracking và grouping.')
             stages = StageTimer()
             video_started = time.perf_counter()
             capture = cv2.VideoCapture(str(args.input))
@@ -162,7 +170,7 @@ def main():
                         ok, frame = capture.read()
                     if not ok:
                         break
-                    if writer is None:
+                    if writer is None and args.save_video:
                         height, width = frame.shape[:2]
                         with stages.measure("open_writer"):
                             writer = open_writer(args.output / "detected.mp4", fps, (width, height),
@@ -193,7 +201,11 @@ def main():
                         rendered = draw_detections(frame, [] if args.visualization == 'group_ids' else tracks,
                                                    font, groups, group_ids_only=args.visualization == 'group_ids')
                     with stages.measure("encode_write"):
-                        writer.write(rendered)
+                        if writer is not None:
+                            writer.write(rendered)
+                    if alerts is not None:
+                        with stages.measure('alerts'):
+                            alerts.update(rendered, index, fps, groups, tracker.last_motion.get('scene_cut', False))
                     with stages.measure("jsonl"):
                         records.write(json.dumps({"frame_index": index, "timestamp_seconds": index / fps,
                                               "detector_ran": detector_ran,
@@ -217,6 +229,10 @@ def main():
                         writer.release()
                 with stages.measure("flush_jsonl"):
                     records.flush()
+            if alerts is not None:
+                with stages.measure('alert_export'):
+                    alert_summary = alerts.finalize(args.output / 'detected.mp4', fps, index)
+                print(f"Cảnh báo: {alert_summary['event_count']} sự kiện, {alert_summary['package_count']} gói")
             video_elapsed = time.perf_counter() - video_started
             stage_stats = stages.summary(video_elapsed)
             print("\nThời gian từng bước (TB tính trên số lượt thực hiện của bước):")
@@ -231,7 +247,8 @@ def main():
         stats["video_processing_seconds"] = video_elapsed
         stats["tracking"] = tracking_config
         stats["processing_fps_including_finalize"] = index / video_elapsed
-        stats["output_video_bytes"] = (args.output / "detected.mp4").stat().st_size
+        stats["output_video_bytes"] = (args.output / "detected.mp4").stat().st_size if args.save_video else 0
+        stats['save_video'] = args.save_video
         stats["video_encoder"] = config["output"]["video"]
         if isinstance(writer, ThreadedWriter):
             stats["encoder_worker"] = {"write_seconds": writer.write_seconds,

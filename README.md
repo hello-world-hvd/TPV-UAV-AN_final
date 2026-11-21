@@ -283,3 +283,32 @@ Bài này dùng các ảnh PNG trong `data/datatest`, warmup và đo luân phiê
 - Chưa có classifier xác nhận rửa xe/sửa xe, ReID hoặc EMA/hysteresis cho nhãn.
 - Box khác lớp có thể cùng khoanh một vật; IoS cùng nhãn cũng có thể gộp nhầm vật thật nằm trong nhau.
 - Tốc độ phụ thuộc kích thước video, tần suất detect, số track và tải CPU/GPU chung của server.
+
+## Cảnh báo và bằng chứng
+
+```bash
+.venv/bin/python test/test_alert.py --mode video \
+  --config configs/detection.server.yaml --input data/video_test04.mp4 \
+  --output outputs/alerts_video04 --save-video
+```
+
+Dùng `--no-save-video` để không ghi video tổng/clip; vẫn lưu ảnh viz và metadata.
+Mặc định lưu video. Clip lấy từ 2 giây trước đến 8 giây sau cảnh báo đầu tiên,
+không kéo dài khi có hành vi mới. Hành vi khác trong cùng cửa sổ được thêm vào
+metadata kèm ảnh viz tại frame phát cảnh báo riêng. Cắt clip sau khi video tổng
+đã ghi xong; thời gian xuất clip được đo ở bước `alert_export`.
+
+Mỗi gói ở `alerts/alert_000001/` chứa `clip.mp4` (nếu bật), các ảnh `event_*.jpg`
+và `metadata.json`. `alerts/index.json` liệt kê toàn bộ gói/sự kiện. Đầu/cuối
+video thiếu pre/post-roll sẽ ghi số giây thiếu. Ảnh và clip giữ toàn frame đã viz,
+không crop không gian theo bbox. Cửa sổ clip là [bắt đầu, kết thúc).
+
+`configs/alerts.yaml` điều khiển pre/post-roll, thời gian xác nhận và chống lặp.
+Cùng nhóm/hành vi chỉ phát lại khi đã vắng đủ `rearm_seconds`; thay group ID
+có thể tạo cảnh báo mới. Nhãn theo quy tắc vẫn là nghi vấn, không xác minh vi phạm.
+
+Kiểm tra quy tắc và clip tổng hợp:
+
+```bash
+.venv/bin/python test/test_alert.py --mode unit
+```

@@ -1,0 +1,6 @@
+# Mốc thời gian tính theo video nguồn, không theo thời gian máy xử lý.
+pre_seconds: 2.0           # Clip bắt đầu trước cảnh báo đầu tiên 2 giây.
+post_seconds: 8.0          # Clip kết thúc sau cảnh báo đầu tiên 8 giây, không tự kéo dài.
+rearm_seconds: 2.0         # Hành vi phải vắng đủ thời gian mới cảnh báo lại cho cùng nhóm.
+require_confirmed_group: false # Cho phép cảnh báo nghi vấn từ nhóm candidate (biển/xe rác).
+confirmation_seconds: 0.4  # Hành vi phải xuất hiện liên tục đủ thời gian trước khi phát.
