@@ -2,7 +2,7 @@
 
 Phân tích ảnh/video UAV bằng hai model YOLOE. Hệ thống nhận diện đối tượng, theo dõi ID qua từng frame và gộp các đối tượng liên quan thành vùng nhóm. Video đầu ra giữ độ phân giải và FPS nguồn.
 
-Đây là bản refactor đang phát triển. Điểm chạy hiện tại nằm trong `test/`; `src/main.py` và `src/pipeline/` mới là khung, chưa triển khai livestream hay pipeline dịch vụ.
+Đây là bản refactor đang phát triển. Điểm chạy hiện tại nằm trong `test/`; chưa triển khai livestream hay pipeline dịch vụ.
 
 ## Chức năng hiện có
 
@@ -41,6 +41,7 @@ Model chính `yoloe-v8s-single` cung cấp các lớp chính; model bổ sung `y
 configs/
   detection.yaml          # Local: checkpoint .pt, MPS/CPU
   detection.server.yaml   # Server: TensorRT, CUDA, NVENC
+  bbox_limits.yaml        # Giới hạn bbox riêng từng nhãn theo tỷ lệ ảnh
   tracking.yaml           # Vòng đời ID, motion và ngưỡng ghép box
   grouping.yaml           # Quan hệ, khoảng cách và thời gian xác nhận nhóm
 src/
@@ -48,8 +49,6 @@ src/
   detection/              # Nhãn, detector, CUDA song song và render
   tracking/               # Kalman/Hungarian và optical flow
   grouping/               # Tạo nhóm từ các track
-  main.py                 # Khung điểm vào, chưa có luồng chạy
-  pipeline/               # Khung điều phối
 scripts/
   export_tensorrt.py       # Tạo engine trên GPU server
   benchmark_parallel.py   # So sánh tuần tự/song song và kiểm tra kết quả
@@ -179,13 +178,15 @@ Các ngưỡng chính:
 ```yaml
 chair_gap_ratio: 1.5
 person_confirm_seconds: 1.0
-stationary_seconds: 2.0
-stationary_displacement_ratio: 0.15
-stationary_step_ratio: 0.1
-stationary_path_ratio: 0.3
+stationary_seconds: 1.0
+motion_window_seconds: 1.5
+stationary_speed_ratio: 0.08
+moving_speed_ratio: 0.2
+moving_confirm_seconds: 1.0
+relation_grace_seconds: 1.0
 ```
 
-Khoảng cách là tỷ lệ kích thước ảnh, không phải mét. Trạng thái đứng yên cần detection thực và bù camera đáng tin cậy; mất bù camera sẽ reset xác nhận. Xe chưa đủ bằng chứng đứng yên không được xuất nhóm người–xe. Việc gộp nhóm chưa kết luận sửa/rửa xe hoặc vi phạm; detection sai lớp vẫn có thể gây nhóm sai.
+Khoảng cách là tỷ lệ kích thước ảnh, không phải mét. Trạng thái đứng yên cần detection thực và bù camera đáng tin cậy; mất bù camera ngắn được giữ lịch sử tối đa `relation_grace_seconds`, không tích luỹ bằng chứng mới trong khoảng đó. Xe chưa đủ bằng chứng đứng yên không được xuất nhóm người–xe. Việc gộp nhóm chưa kết luận sửa/rửa xe hoặc vi phạm; detection sai lớp vẫn có thể gây nhóm sai.
 
 ## TensorRT và NVENC trên server
 

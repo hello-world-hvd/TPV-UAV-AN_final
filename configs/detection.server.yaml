@@ -1,43 +1,43 @@
 # Thiết lập model, tham số suy luận và ngưỡng nhận diện của hệ thống.
 # Đường dẫn tương đối được tính từ thư mục chứa file này.
-models:
+models:                                 # Danh sách model chạy trên cùng ảnh; đường dẫn tương đối tính từ file YAML.
   - ../models/yoloe-v8s-single.engine
   - ../models/yoloe-sidewalk-extra-v5.engine
 
-inference:
-  parallel_models: true       # Hai TensorRT context chạy trên hai CUDA stream riêng
-  device: "0"                 # GPU CUDA đầu tiên trên server
-  imgsz: 960                  # Kích thước suy luận, bội số của 32
-  confidence: 0.35            # Ngưỡng mặc định
-  nms_iou: 0.5                # Ngưỡng loại box trùng trong từng model
-  merge_iou: 0.5              # Ngưỡng gộp box cùng nhãn giữa các model
-  merge_ios: 0.9              # Lọc box chứa nhau cùng nhãn, giữ điểm cao hơn; null để tắt
-  max_detections: 300         # Số box tối đa của mỗi model trên một ảnh
-  detect_fps: 2               # Số lần detect mỗi giây video nguồn; null: detect mọi frame
+inference:                              # Tham số suy luận áp dụng cho các model.
+  parallel_models: true                 # true: hai engine TensorRT 10+ kích thước cố định chạy trên CUDA stream riêng; false: tuần tự.
+  device: "0"                           # Thiết bị: cpu, mps (GPU Apple), hoặc "0" (GPU CUDA đầu tiên).
+  imgsz: 960                            # Kích thước ảnh suy luận theo pixel, bội số 32; engine cố định cần export lại khi đổi.
+  confidence: 0.35                      # Ngưỡng mặc định cho nhãn không có trong thresholds; model lấy ngưỡng nhỏ nhất trước khi lọc từng nhãn.
+  nms_iou: 0.5                          # Ngưỡng IoU truyền vào hậu xử lý từng model; không loại chéo lớp. Engine end-to-end có thể xử lý khác.
+  merge_iou: 0.5                        # Loại box cùng nhãn nếu IoU > ngưỡng này sau khi gom kết quả model; giữ confidence cao hơn.
+  merge_ios: 0.9                        # Loại box cùng nhãn nếu giao/diện tích box nhỏ >= ngưỡng; null để tắt; giữ confidence cao hơn.
+  max_detections: 300                   # Số detection tối đa mỗi model mỗi ảnh; engine end-to-end còn bị giới hạn khi export.
+  detect_fps: 2                         # Số lượt detect mỗi giây video nguồn; null: mọi frame. Không phải FPS xử lý hay FPS output.
 
 # Ngưỡng riêng cho đúng 12 nhãn yêu cầu.
-thresholds:
-  người: 0.4
-  xe máy: 0.35
-  bàn nhựa: 0.35
-  ghế nhựa: 0.35
-  xe đẩy bán hàng: 0.3
-  biển quảng cáo: 0.45       
-  cột điện: 0.35
-  thân cây: 0.35
-  hàng hoá: 0.45
-  vật liệu xây dựng: 0.35     # Chỉ nhận đống gạch / gạch xếp chồng
-  xô chậu: 0.35
-  xe chở rác: 0.35
+thresholds:                             # Ngưỡng confidence riêng từng nhãn, thuộc (0, 1]; tăng để lọc mạnh hơn, có thể bỏ sót.
+  người: 0.4                            # Confidence tối thiểu của nhãn này.
+  xe máy: 0.35                          # Confidence tối thiểu của nhãn này.
+  bàn nhựa: 0.35                        # Confidence tối thiểu của nhãn này.
+  ghế nhựa: 0.35                        # Confidence tối thiểu của nhãn này.
+  xe đẩy bán hàng: 0.3                  # Confidence tối thiểu của nhãn này.
+  biển quảng cáo: 0.45                  # Confidence tối thiểu của nhãn này.
+  cột điện: 0.35                        # Confidence tối thiểu của nhãn này.
+  thân cây: 0.35                        # Confidence tối thiểu của nhãn này.
+  hàng hoá: 0.45                        # Confidence tối thiểu của nhãn này.
+  vật liệu xây dựng: 0.35               # Confidence tối thiểu của nhãn này. Chỉ đống gạch/gạch xếp chồng.
+  xô chậu: 0.35                         # Confidence tối thiểu của nhãn này.
+  xe chở rác: 0.35                      # Confidence tối thiểu của nhãn này.
 
-output:
-  directory: ../outputs/detect
-  font: null                  # null: tự tìm font Unicode; hoặc đường dẫn file .ttf
+output:                                 # Thiết lập kết quả xuất ra.
+  directory: ../outputs/detect          # Thư mục gốc lưu kết quả; --output trên dòng lệnh có thể ghi đè.
+  font: null                            # Đường dẫn font Unicode .ttf; null: tự tìm font tiếng Việt trên máy.
 
-  video:
-    encoder: nvenc
-    preset: p1                # p1 ưu tiên tốc độ; p7 ưu tiên chất lượng
-    cq: 20                    # Giá trị thấp hơn tăng chất lượng và dung lượng
-    async_encode: true
-    queue_size: 2             # Chờ khi đầy; không bỏ frame
-    ffmpeg: ../.tools/nvenc/bin/ffmpeg
+  video:                                # Cấu hình ghi video; nếu bỏ phần này mặc định OpenCV, ghi đồng bộ.
+    encoder: nvenc                      # nvenc: FFmpeg H.264 trên NVIDIA; opencv: VideoWriter mp4v.
+    preset: p1                          # NVENC p1..p7: p1 ưu tiên tốc độ, p7 ưu tiên hiệu quả nén/chất lượng.
+    cq: 20                              # Mức chất lượng NVENC 0..51; giảm thường tăng chất lượng và dung lượng.
+    async_encode: true                  # true: worker ghi riêng; false: ghi trực tiếp trong vòng xử lý.
+    queue_size: 2                       # Số frame tối đa chờ trong worker (1..8); đầy thì chờ, không bỏ frame; chỉ dùng khi async.
+    ffmpeg: ../.tools/nvenc/bin/ffmpeg  # Executable FFmpeg có NVENC tương thích driver; đường dẫn tương đối tính từ YAML.

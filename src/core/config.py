@@ -55,6 +55,19 @@ def load_config(path):
         if label not in LABELS.values():
             raise ValueError(f"Nhãn không được hỗ trợ: {label}")
         _threshold(value, label)
+    # File riêng dùng chung local/server, tránh thay cấu hình thiết bị khi chỉnh kích thước box.
+    limits_path = path.parent / 'bbox_limits.yaml'
+    limits = yaml.safe_load(limits_path.read_text(encoding='utf-8')) if limits_path.is_file() else {}
+    if not isinstance(limits, dict):
+        raise ValueError('bbox_limits.yaml phải là mapping theo nhãn.')
+    for label, rule in limits.items():
+        if label not in LABELS.values() or not isinstance(rule, dict):
+            raise ValueError(f'Cấu hình giới hạn bbox không hợp lệ: {label}')
+        for name, value in rule.items():
+            if name not in ('max_width_ratio', 'max_height_ratio', 'max_area_ratio'):
+                raise ValueError(f'Tham số giới hạn bbox không hỗ trợ: {name}')
+            _threshold(value, f'{label}.{name}')
+    config['bbox_limits'] = limits
     config["output"]["directory"] = resolve(config["output"].get("directory"))
     font = config["output"].get("font")
     config["output"]["font"] = resolve(font) if font is not None else None

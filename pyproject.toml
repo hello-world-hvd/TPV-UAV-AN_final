@@ -14,9 +14,8 @@ dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-py-modules = ["main"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["core", "core.*", "pipeline", "pipeline.*", "detection", "detection.*", "configs", "configs.*", "tracking", "tracking.*", "grouping", "grouping.*"]
+include = ["core", "core.*", "detection", "detection.*", "tracking", "tracking.*", "grouping", "grouping.*"]
 namespaces = false

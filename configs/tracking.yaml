@@ -1,10 +1,10 @@
 # Theo dõi trên từng frame; thời gian tính theo timestamp video, không theo tốc độ máy.
-enabled: true
-min_hits: 2                    # Số lần detect liên tiếp để xác nhận ID
-max_lost_seconds: 1.5          # Giữ ID để ghép lại khi mất dấu ngắn
-max_prediction_seconds: 0.75   # Chỉ vẽ bbox dự đoán tối đa từng này giây từ detection cuối
-camera_motion: true
-motion_max_side: 480           # Thu nhỏ ảnh để tính optical flow nhẹ hơn
-flow_refresh_interval: 6
-min_iou: 0.1
-max_center_distance: 0.75      # Khoảng cách tâm chia cho đường chéo bbox
+enabled: true                 # Bật tracking từng frame; false: giữ bbox detection gần nhất.
+min_hits: 2                   # Số lần detection ghép liên tiếp để xác nhận ID; frame không detect không cộng lượt.
+max_lost_seconds: 1.5         # Số giây tối đa kể từ detection cuối giữ ID để ghép lại; quá hạn thì xóa.
+max_prediction_seconds: 0.75  # Số giây từ detection cuối còn cho vẽ track; phải <= max_lost_seconds.
+camera_motion: true           # Bật ước lượng/bù camera và flow từng vật; flow riêng bỏ qua trên frame có detect.
+motion_max_side: 480          # Cạnh dài tối đa (pixel) ảnh thu nhỏ dùng tính optical flow; giảm nhẹ hơn nhưng ít chi tiết.
+flow_refresh_interval: 6      # Chu kỳ theo số frame để tìm lại điểm đặc trưng; giữa các lần dùng lại điểm flow còn hợp lệ.
+min_iou: 0.1                  # Ghép cùng nhãn nếu IoU >= ngưỡng HOẶC tâm đủ gần; còn kiểm tra thay đổi kích thước.
+max_center_distance: 0.75     # Khoảng cách tâm / đường chéo bbox track tối đa để ghép khi IoU thấp.

@@ -1,17 +1,21 @@
 # Gộp quan hệ không gian theo track; ngưỡng khoảng cách chuẩn hoá, không phải mét.
-enabled: true
-confirm_seconds: 0.4
-max_observation_age: 0.5
-object_gap_ratio: 0.5
-cluster_span_ratio: 4.0
-person_gap_height_ratio: 0.5
-stationary_seconds: 2.0
-stationary_displacement_ratio: 0.15
-attachment_gap_ratio: 0.15
+enabled: true                  # Bật grouping sau tracking; false: không tạo/vẽ nhóm.
+confirm_seconds: 0.4           # Thời gian nhóm tồn tại để chuyển candidate sang confirmed nếu đủ điều kiện; không xác nhận hành vi.
+max_observation_age: 0.5       # Tuổi detection tối đa (giây) để track tham gia nhóm/xác nhận xe; không lấy nguồn prediction thuần.
+object_gap_ratio: 0.5          # Khoảng hở mép box tối đa / đường chéo neo; không có neo dùng trung vị đường chéo cụm. Không áp dụng cặp có ghế.
+cluster_span_ratio: 4.0        # Khoảng cách tâm xa nhất trong cụm / trung vị đường chéo bbox tối đa; chặn nối dây chuyền.
+person_gap_height_ratio: 0.5   # Khoảng hở nhỏ nhất giữa người và từng vật / chiều cao người tối đa để xét ghép.
+stationary_seconds: 1.0        # Thời gian xe máy phải đứng yên sau bù camera; cần >=2 detection thực và quan sát còn mới.
+attachment_gap_ratio: 0.15     # Khoảng hở biển–cây/cột / đường chéo biển tối đa; chỉ tạo ứng viên, không chứng minh biển treo.
 
 # Khoảng ghép ghế rộng hơn nhưng vẫn bị giới hạn bởi tâm bàn và đường kính cụm.
-chair_gap_ratio: 1.5
-person_confirm_seconds: 1.0
-person_foot_height_ratio: 1.5  # Nới cho người ngồi; khoảng cách tính tới từng vật.
-stationary_step_ratio: 0.1   # Giới hạn dịch chuyển mỗi lần quan sát sau bù camera.
-stationary_path_ratio: 0.3   # Tổng đường đi chuẩn hoá; chặn đi rồi quay lại neo.
+chair_gap_ratio: 1.5           # Thay object_gap_ratio khi một đầu là ghế; vẫn phải gần neo và đạt giới hạn độ trải cụm.
+person_confirm_seconds: 1.0    # Thời gian người liên tục chọn cùng loại nhóm/cùng neo trước khi được thêm vào nhóm.
+person_foot_height_ratio: 1.5  # Chênh đáy bbox người–vật / chiều cao người tối đa; tăng để nới cho người ngồi.
+
+# Vận tốc tâm sau bù camera / đường chéo bbox / giây; hai ngưỡng tạo hysteresis.
+motion_window_seconds: 1.5     # Cửa sổ detection dùng đo chuyển động, không cộng dồn nhiễu vô hạn.
+stationary_speed_ratio: 0.08   # Dưới ngưỡng liên tục đủ stationary_seconds thì đứng yên.
+moving_speed_ratio: 0.2        # Trên ngưỡng liên tục đủ moving_confirm_seconds mới rời đứng yên.
+moving_confirm_seconds: 1.0    # Bỏ qua một lần bbox rung mạnh.
+relation_grace_seconds: 1.0    # Giữ lịch sử ngắn khi mất camera/quan hệ; không cộng thêm bằng chứng.

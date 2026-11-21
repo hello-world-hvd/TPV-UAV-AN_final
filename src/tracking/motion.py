@@ -17,16 +17,6 @@ def warp_box(box, matrix):
     return np.concatenate((points.min(0), points.max(0)))
 
 
-def warp_boxes(boxes, matrix):
-    """Same float32 corner transform as warp_box, in one OpenCV call."""
-    boxes = np.asarray(boxes, dtype=np.float32).reshape(-1, 4)
-    if not len(boxes):
-        return np.empty((0, 4), dtype=np.float32)
-    corners = boxes[:, [0, 1, 2, 1, 2, 3, 0, 3]].reshape(-1, 4, 2)
-    points = cv2.transform(corners.reshape(1, -1, 2), np.asarray(matrix, np.float32)).reshape(-1, 4, 2)
-    return np.concatenate((points.min(1), points.max(1)), axis=1)
-
-
 def local_box_from_flow(box, previous_points, current_points, scale_xy, camera_matrix=None):
     """Combine camera scale/rotation with the object's median residual motion.
 

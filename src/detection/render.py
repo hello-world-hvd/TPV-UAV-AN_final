@@ -38,6 +38,18 @@ def draw_detections(frame, detections, font, groups=()):
         text = f'{row["label"]} {row["confidence"]:.2f}'
         if "track_id" in row:
             text = f'#{row["track_id"]} {text}'
+        info = row.get('stationary_info')
+        if info:
+            states = {'stationary': 'ĐỨNG YÊN', 'pending': 'ĐANG XÁC NHẬN',
+                      'unknown': 'CHƯA RÕ', 'motion_threshold_exceeded': 'VƯỢT NGƯỠNG CHUYỂN ĐỘNG'}
+            reasons = {'camera_unreliable': 'camera không tin cậy', 'observation_unavailable': 'thiếu quan sát mới',
+                       'waiting_detection': 'chờ detect', 'anchor_displacement': 'lệch neo',
+                       'step_displacement': 'dịch bước lớn', 'accumulated_path': 'đường đi tích luỹ',
+                       'first_observation': 'quan sát đầu'}
+            text += f" | {states[info['status']]} {info['observed_seconds']:.1f}/{info['required_seconds']:g}s"
+            detail = info['reason'] if info['status'] != 'pending' else info['last_reset_reason']
+            if info['reason'] in reasons:
+                text += f" | {reasons[info['reason']]}"
         cv2.rectangle(result, (x1, y1), (x2, y2), (0, 255, 0), 2)
         patch = _label_patch(text, font)
         x = max(0, min(x1, width - 1))

@@ -1,0 +1,55 @@
+# Giới hạn bbox từng object, tự đọc cùng thư mục detection YAML; không giới hạn bbox nhóm.
+# Tỷ lệ so với chiều rộng/cao/diện tích frame gốc, không phụ thuộc độ phân giải.
+# Đây là ngưỡng khởi đầu cho video UAV: object thật ở gần camera có thể cần nới.
+# max_width_ratio: chiều rộng box / chiều rộng ảnh tối đa.
+# max_height_ratio: chiều cao box / chiều cao ảnh tối đa.
+# max_area_ratio: diện tích box / diện tích ảnh tối đa.
+# Xóa mục nhãn hoặc đặt cả ba bằng 1 để không giới hạn kích thước nhãn đó.
+người:
+  max_width_ratio: 0.4
+  max_height_ratio: 0.65
+  max_area_ratio: 0.12
+xe máy:
+  max_width_ratio: 0.5
+  max_height_ratio: 0.65
+  max_area_ratio: 0.18
+bàn nhựa:
+  max_width_ratio: 0.5
+  max_height_ratio: 0.6
+  max_area_ratio: 0.15
+ghế nhựa:
+  max_width_ratio: 0.35
+  max_height_ratio: 0.5
+  max_area_ratio: 0.08
+xe đẩy bán hàng:
+  max_width_ratio: 0.55
+  max_height_ratio: 0.65
+  max_area_ratio: 0.2
+biển quảng cáo:
+  max_width_ratio: 0.75
+  max_height_ratio: 0.85
+  max_area_ratio: 0.35
+cột điện:
+  max_width_ratio: 0.4
+  max_height_ratio: 1.0
+  max_area_ratio: 0.2
+thân cây:
+  max_width_ratio: 0.5
+  max_height_ratio: 1.0
+  max_area_ratio: 0.25
+hàng hoá:
+  max_width_ratio: 0.6
+  max_height_ratio: 0.65
+  max_area_ratio: 0.2
+vật liệu xây dựng:
+  max_width_ratio: 0.6
+  max_height_ratio: 0.65
+  max_area_ratio: 0.2
+xô chậu:
+  max_width_ratio: 0.3
+  max_height_ratio: 0.4
+  max_area_ratio: 0.06
+xe chở rác:
+  max_width_ratio: 0.8
+  max_height_ratio: 0.8
+  max_area_ratio: 0.4

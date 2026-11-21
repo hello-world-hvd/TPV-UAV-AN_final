@@ -23,6 +23,7 @@ class Detector:
         self.rect = inference.get("rect", True)
         self.max_detections = inference["max_detections"]
         self.thresholds = config["thresholds"]
+        self.bbox_limits = config.get('bbox_limits', {})
         self.minimum_confidence = min([self.confidence, *self.thresholds.values()])
         self.models = []
         self.parallel_models = inference.get("parallel_models", False)
@@ -71,10 +72,22 @@ class Detector:
             for (_, mapping), rows in zip(self.models, outputs):
                 for x1, y1, x2, y2, score, index in rows:
                     label = mapping.get(int(index))
-                    if label is not None and score >= self.thresholds.get(label, self.confidence):
+                    if (label is not None and score >= self.thresholds.get(label, self.confidence)
+                            and self._valid_box(label, [x1, y1, x2, y2], frame.shape)):
                         detections.append({"label": label, "confidence": float(score),
                                            "bbox_xyxy": [float(x1), float(y1), float(x2), float(y2)]})
             return self._merge(detections)
+
+    def _valid_box(self, label, box, shape):
+        """Lọc box theo tỷ lệ ảnh gốc trước NMS/tracking; không áp dụng cho bbox nhóm."""
+        if not np.isfinite(box).all():
+            return False
+        height, width = shape[:2]
+        x1, y1, x2, y2 = np.clip(box, [0, 0, 0, 0], [width, height, width, height])
+        w, h = (x2 - x1) / width, (y2 - y1) / height
+        rule = self.bbox_limits.get(label, {})
+        return (w > 0 and h > 0 and w <= rule.get('max_width_ratio', 1)
+                and h <= rule.get('max_height_ratio', 1) and w * h <= rule.get('max_area_ratio', 1))
 
     def close(self):
         if self.parallel is not None:
