@@ -15,7 +15,7 @@ def main():
     config['camera_motion'] = False
     frame = np.zeros((240, 320, 3), np.uint8)
     def detection(x):
-        return {'label': 'xe máy', 'confidence': .8, 'bbox_xyxy': [x, 50, x+30, 100]}
+        return {'label': 'Xe máy', 'confidence': .8, 'bbox_xyxy': [x, 50, x+30, 100]}
     tracker = Tracker(config)
     assert not tracker.update(frame, 0, [detection(20)])
     assert tracker.update(frame, .1, [detection(25)])[0]['track_id'] == 1

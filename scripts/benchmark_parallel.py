@@ -13,6 +13,8 @@ from detection.detector import Detector
 
 def main():
     config = load_config(ROOT / 'configs/detection.server.yaml')
+    if len(config['models']) < 2:
+        raise ValueError('Cấu hình mới chỉ có một detector; không cần chạy hai model song song.')
     config['inference']['parallel_models'] = False
     images = [cv2.imread(str(p)) for p in sorted((ROOT/'data/datatest').glob('*.png'))]
     detector = Detector(config)

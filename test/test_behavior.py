@@ -25,19 +25,21 @@ def check_rules():
         engine = BehaviorEngine(p/'behavior.yaml', 'cpu')
         def row(i, label):
             return dict(track_id=i, label=label, bbox_xyxy=[10,10,80,90], position_source='detection')
-        tracks = [row(1,'xô chậu'), row(2,'người'), row(3,'xe máy')]
+        tracks = [row(1,'Xô'), row(2,'Người'), row(3,'Xe máy')]
+        tracks.append(row(4, 'Máy móc'))
         def group(i, kind, ids, **extra):
             return dict(group_id=i, kind=kind, track_ids=ids, bbox_xyxy=[10,10,80,90], status='confirmed', **extra)
         groups = [group(1,'đồ dùng và hàng hoá',[1,2]),
                   group(2,'người và xe máy đứng yên',[2,3],stationary_verified=True),
-                  group(3,'vật liệu xây dựng',[]), group(4,'biển quảng cáo',[]),
-                  group(5,'xe rác và người lái ứng viên',[])]
+                  group(3,'Vật liệu xây dựng',[]), group(4,'Biển quảng cáo',[]),
+                  group(5,'xe rác và người lái ứng viên',[]), group(6,'Người và Máy móc',[2,4])]
         frame=np.zeros((100,150,3),np.uint8)
         with patch('behavior.engine.ActivityClassifier') as factory:
             factory.return_value.predict.return_value=[[.05,.05,.9]]
             engine.update(frame,tracks,groups,0)
             assert groups[1]['behaviors'][0]['name']=='rửa xe'
             assert len(groups[0]['behaviors'])==2
+            assert groups[5]['behaviors'][0]['name']=='sửa chữa máy móc trên vỉa hè'
             assert groups[2]['behaviors'][0]['name']=='tập kết vật liệu xây dựng sai quy định'
             assert groups[3]['behaviors'][0]['name']=='đặt biển báo sai quy định'
             assert groups[4]['behaviors'][0]['name']=='tập kết rác sai quy định'

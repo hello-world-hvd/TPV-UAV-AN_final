@@ -1,3 +1,28 @@
+# Bản ver2 — YOLO26m fine-tune
+
+Detector hiện dùng duy nhất `models/yolo26m_finetune_detect.pt`. Checkpoint có 14 lớp
+(index 0..13); hệ thống lấy đúng 13 lớp được yêu cầu và bỏ `Xe bán hàng rong` (index 13).
+ID danh mục 1..13 tương ứng index checkpoint 0..12. Tên nhãn mới dùng xuyên suốt
+tracking, grouping, ngưỡng confidence và giới hạn bbox. Vật liệu xây dựng không còn
+bị giới hạn riêng đống gạch; Bàn/Ghế không còn bị giới hạn chất liệu nhựa.
+
+Model mới dùng một predictor, `parallel_models: false`. Local dùng MPS/CPU;
+cấu hình server trỏ engine mới trên CUDA. Đã tạo engine TensorRT FP16 960×960 trên server ver2 tại `/home/abc/yuu_workspace/TPV-UAV-AN_ver2`.
+Export bằng `scripts/export_tensorrt.py` trên GPU rồi đổi đường dẫn `.pt` thành `.engine`.
+
+Nhóm mới `Người và Máy móc` yêu cầu người gần máy đủ thời gian cấu hình.
+Video hành vi hiển thị `G{id}: Người và Máy móc` trước khi nhóm confirmed, sau đó
+`B{id} sửa chữa máy móc trên vỉa hè (nghi vấn)`. Cảnh báo này theo quy tắc nhóm,
+không phải lớp MobileNetV3. MobileNetV3 vẫn chỉ phân loại sửa/rửa xe và hoạt động khác.
+
+```bash
+.venv/bin/python test/test_behavior.py --mode video --config configs/detection.yaml --input data/video_test03.mp4 --output outputs/ver2_video03
+```
+
+Phần dưới là tài liệu bản cũ; tên lớp/model và benchmark hai detector không áp dụng ver2.
+
+---
+
 # TPV-UAV-AN — Nhận diện, tracking và gộp nhóm đối tượng
 
 Phân tích ảnh/video UAV bằng hai model YOLOE. Hệ thống nhận diện đối tượng, theo dõi ID qua từng frame và gộp các đối tượng liên quan thành vùng nhóm. Video đầu ra giữ độ phân giải và FPS nguồn.

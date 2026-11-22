@@ -16,8 +16,8 @@ def check_rules():
     motion = dict(reliable=True, scene_cut=False, matrix=np.eye(2,3))
     def sample(i, moving=False):
         x = i * 5 if moving else (.4 if i % 2 else -.4)
-        return [row(1,'xe máy',[x,0,x+50,100]), row(2,'người',[x+40,0,x+70,100]),
-                row(3,'bàn nhựa',[60,0,120,100])]
+        return [row(1,'Xe máy',[x,0,x+50,100]), row(2,'Người',[x+40,0,x+70,100]),
+                row(3,'Bàn',[60,0,120,100])]
     g = Grouper(dict(config))
     for i in range(40):
         rows = sample(i)

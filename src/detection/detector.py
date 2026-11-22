@@ -1,10 +1,10 @@
-"""Nạp hai model YOLOE có sẵn, lọc đúng nhãn yêu cầu và gộp các box trùng cùng nhãn."""
+"""Nạp model YOLO detection theo cấu hình, lọc đúng nhãn yêu cầu và gộp các box trùng cùng nhãn."""
 
 from pathlib import Path
 from threading import Lock
 
 import numpy as np
-from ultralytics import YOLOE, YOLO
+from ultralytics import YOLO
 from ultralytics.engine.model import Model
 
 from detection.labels import PHRASE_LABELS
@@ -37,11 +37,14 @@ class Detector:
             if not path.is_file():
                 raise FileNotFoundError(f"Không tìm thấy model: {path}")
             # Engine giữ nguyên metadata tên lớp và dùng hậu xử lý box giống bản .pt.
-            model = YOLO(str(path), task="detect") if path.suffix == ".engine" else YOLOE(str(path))
+            model = YOLO(str(path), task="detect")
             names = model.names
             names = names if isinstance(names, dict) else dict(enumerate(names))
             mapping = {int(index): PHRASE_LABELS[name] for index, name in names.items()
                        if name in PHRASE_LABELS}
+            missing = set(PHRASE_LABELS) - set(names.values())
+            if missing:
+                raise ValueError(f'Checkpoint thiếu nhãn yêu cầu: {sorted(missing)}')
             if not mapping:
                 raise ValueError(f"Model không có nhãn phù hợp: {path}")
             self.models.append((model, mapping))
@@ -58,7 +61,7 @@ class Detector:
         return result.boxes.data.cpu().tolist() if result.boxes is not None else []
 
     def detect(self, frame):
-        """Nhận ảnh BGR; chờ cả hai model hoàn tất rồi mới lọc/gộp box."""
+        """Nhận ảnh BGR; chờ model hoàn tất rồi mới lọc/gộp box."""
         with self.lock:
             if self.parallel_models and self.parallel is None:
                 # Khởi tạo predictor/warmup tuần tự một lần, trước khi dùng context riêng.

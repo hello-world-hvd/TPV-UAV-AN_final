@@ -43,24 +43,26 @@ class BehaviorEngine:
             names = []
             if group['kind'] == 'đồ dùng và hàng hoá':
                 names.append('hoạt động kinh doanh trên vỉa hè')
-                if {'xô chậu', 'người'} <= labels:
+                if {'Xô', 'Người'} <= labels:
                     names.append('đổ nước tẩy rửa ra vỉa hè')
+            elif group['kind'] == 'Người và Máy móc' and {'Người', 'Máy móc'} <= labels and group['status'] == 'confirmed':
+                names.append('sửa chữa máy móc trên vỉa hè')
             elif group['kind'] == 'xe rác và người lái ứng viên':
                 names.append('tập kết rác sai quy định')
-            elif group['kind'] == 'vật liệu xây dựng':
+            elif group['kind'] == 'Vật liệu xây dựng':
                 names.append('tập kết vật liệu xây dựng sai quy định')
-            elif group['kind'] in ('biển quảng cáo', 'biển treo trên cây hoặc cột ứng viên'):
+            elif group['kind'] in ('Biển quảng cáo', 'biển treo trên cây hoặc cột ứng viên'):
                 names.append('đặt biển báo sai quy định')
-            elif 'xe chở rác' in labels:
+            elif 'Phương tiện thu gom, vận chuyển rác' in labels:
                 names.append('tập kết rác sai quy định')
-            elif 'vật liệu xây dựng' in labels:
+            elif 'Vật liệu xây dựng' in labels:
                 names.append('tập kết vật liệu xây dựng sai quy định')
-            elif 'biển quảng cáo' in labels:
+            elif 'Biển quảng cáo' in labels:
                 names.append('đặt biển báo sai quy định')
             group['behaviors'] = [dict(name=name, source='group_rule', status='suspected',
                                        reason='Chỉ suy ra từ thành phần nhóm; chưa xác minh hành động/vị trí/quy định.') for name in names]
             if (group['kind'] == 'người và xe máy đứng yên' and group['status'] == 'confirmed'
-                    and group.get('stationary_verified') and {'người', 'xe máy'} <= labels):
+                    and group.get('stationary_verified') and {'Người', 'Xe máy'} <= labels):
                 key = (group['group_id'], tuple(group['track_ids']))
                 cached = self.cache.get(key)
                 # Chỉ lấy crop mới khi cả người và xe có quan sát tin cậy, không phân loại prediction cũ.

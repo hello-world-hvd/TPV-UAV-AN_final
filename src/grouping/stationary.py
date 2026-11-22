@@ -13,12 +13,12 @@ class StationaryState:
         c = self.config
         if motion.get('scene_cut'):
             self.states.clear()
-        active = {r['track_id'] for r in tracks if r['label'] == 'xe máy'}
+        active = {r['track_id'] for r in tracks if r['label'] == 'Xe máy'}
         for tid in list(self.states):
             if tid not in active and timestamp - self.states[tid]['last_valid'] > c['relation_grace_seconds']:
                 del self.states[tid]
         for row in tracks:
-            if row['label'] != 'xe máy':
+            if row['label'] != 'Xe máy':
                 continue
             s = self.states.setdefault(row['track_id'], dict(history=deque(), low=0., high=0.,
                 stopped=False, last_valid=timestamp, last_detection=None, speed=None))

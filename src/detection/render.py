@@ -66,7 +66,7 @@ def draw_detections(frame, detections, font, groups=(), group_ids_only=False):
         if group_ids_only:
             # Một bbox/nhóm: G khi chưa có hành vi; B khi đã gán cảnh báo hành vi.
             text = (f"B{group['group_id']} {description} (nghi vấn)" if behaviors
-                    else f"G{group['group_id']}")
+                    else f"G{group['group_id']}" + (": Người và Máy móc" if group['kind'] == 'Người và Máy móc' else ''))
         patch = _label_patch(text, font)
         x, y = max(0, min(x1, width - 1)), max(0, min(y2 + 2, height - 1))
         h, w = min(patch.shape[0], height - y), min(patch.shape[1], width - x)

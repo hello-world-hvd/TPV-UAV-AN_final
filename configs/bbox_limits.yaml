@@ -5,51 +5,56 @@
 # max_height_ratio: chiều cao box / chiều cao ảnh tối đa.
 # max_area_ratio: diện tích box / diện tích ảnh tối đa.
 # Xóa mục nhãn hoặc đặt cả ba bằng 1 để không giới hạn kích thước nhãn đó.
-người:
+Người:
   max_width_ratio: 0.4
   max_height_ratio: 0.65
   max_area_ratio: 0.12
-xe máy:
+Xe máy:
   max_width_ratio: 0.5
   max_height_ratio: 0.65
   max_area_ratio: 0.18
-bàn nhựa:
+Bàn:
   max_width_ratio: 0.5
   max_height_ratio: 0.6
   max_area_ratio: 0.15
-ghế nhựa:
+Ghế:
   max_width_ratio: 0.35
   max_height_ratio: 0.5
   max_area_ratio: 0.08
-xe đẩy bán hàng:
+Xe đẩy bán hàng:
   max_width_ratio: 0.5
   max_height_ratio: 0.55
   max_area_ratio: 0.2
-biển quảng cáo:
+Biển quảng cáo:
   max_width_ratio: 0.6
   max_height_ratio: 0.7
   max_area_ratio: 0.35
-cột điện:
+Cột điện:
   max_width_ratio: 0.3
   max_height_ratio: 0.8
   max_area_ratio: 0.2
-thân cây:
+Thân cây:
   max_width_ratio: 0.3
   max_height_ratio: 0.8
   max_area_ratio: 0.25
-hàng hoá:
+Hàng hóa bày bán:
   max_width_ratio: 0.4
   max_height_ratio: 0.45
   max_area_ratio: 0.2
-vật liệu xây dựng:
+Vật liệu xây dựng:
   max_width_ratio: 0.4
   max_height_ratio: 0.4
   max_area_ratio: 0.2
-xô chậu:
+Xô:
   max_width_ratio: 0.3
   max_height_ratio: 0.4
   max_area_ratio: 0.06
-xe chở rác:
+Phương tiện thu gom, vận chuyển rác:
   max_width_ratio: 0.5
   max_height_ratio: 0.5
   max_area_ratio: 0.4
+
+Máy móc:
+  max_width_ratio: 0.6
+  max_height_ratio: 0.65
+  max_area_ratio: 0.25

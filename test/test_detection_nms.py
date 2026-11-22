@@ -14,7 +14,7 @@ class NMSTests(unittest.TestCase):
         self.detector.merge_iou = .5
         self.detector.merge_ios = .9
 
-    def row(self, box, score=.8, label="xe máy"):
+    def row(self, box, score=.8, label="Xe máy"):
         return dict(bbox_xyxy=box, confidence=score, label=label)
 
     def test_containment_keeps_higher_confidence(self):
@@ -25,7 +25,7 @@ class NMSTests(unittest.TestCase):
         self.assertEqual(self.detector._merge([large, small]), [small])
 
     def test_other_labels_and_adjacent_objects_survive(self):
-        rows = [self.row([0, 0, 100, 100]), self.row([10, 10, 30, 30], label="người"),
+        rows = [self.row([0, 0, 100, 100]), self.row([10, 10, 30, 30], label="Người"),
                 self.row([90, 0, 190, 100])]
         self.assertEqual(len(self.detector._merge(rows)), 3)
 

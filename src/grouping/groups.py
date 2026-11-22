@@ -42,15 +42,15 @@ class Grouper:
         self.stationary.update(tracks, timestamp, motion)
         valid = [r for r in tracks if r['detection_age_seconds'] <= self.config['max_observation_age']
                  and r['position_source'] in ('detection', 'optical_flow', 'camera_motion')]
-        people = [r for r in valid if r['label'] == 'người']
+        people = [r for r in valid if r['label'] == 'Người']
         candidates = []
         def add(kind, rows, anchor, eligible=True):
             candidates.append({'kind': kind, 'rows': rows, 'anchor': anchor, 'eligible': eligible})
 
         # Cụm bàn ghế/hàng hoá: giới hạn đường kính để tránh nối dây chuyền cả khu vực.
-        anchors = {'bàn nhựa', 'xe đẩy bán hàng'}
+        anchors = {'Bàn', 'Xe đẩy bán hàng'}
         remaining = sorted([r for r in valid if r['label'] in
-                            {'xô chậu', 'hàng hoá', 'bàn nhựa', 'ghế nhựa', 'xe đẩy bán hàng'}],
+                            {'Xô', 'Hàng hóa bày bán', 'Bàn', 'Ghế', 'Xe đẩy bán hàng'}],
                            key=lambda r: (r['label'] not in anchors, r['bbox_xyxy'][0], r['bbox_xyxy'][1], r['track_id']))
         while remaining:
             members = [remaining.pop(0)]
@@ -67,7 +67,7 @@ class Grouper:
                     scale = max(float(np.median(diagonals)), 1)
                     def near(member):
                         other = np.asarray(member['bbox_xyxy'])
-                        chair = 'ghế nhựa' in (row['label'], member['label'])
+                        chair = 'Ghế' in (row['label'], member['label'])
                         ratio = self.config['chair_gap_ratio'] if chair else self.config['object_gap_ratio']
                         reference = np.asarray(anchor['bbox_xyxy']) if anchor is not None else None
                         local_scale = np.linalg.norm(reference[2:] - reference[:2]) if reference is not None else scale
@@ -82,19 +82,21 @@ class Grouper:
 
         for row in valid:
             tid, label = row['track_id'], row['label']
-            if label == 'xe máy':
+            if label == 'Xe máy':
                 stopped = row.get('stationary_info', {}).get('stationary_verified', False)
                 # Đếm quan hệ ngay cả khi xe chưa đủ thời gian đứng yên; chỉ xuất sau khi đủ.
                 add('người và xe máy đứng yên', [row], tid, stopped)
-            elif label == 'xe chở rác':
+            elif label == 'Máy móc':
+                add('Người và Máy móc', [row], tid)
+            elif label == 'Phương tiện thu gom, vận chuyển rác':
                 add('xe rác và người lái ứng viên', [row], tid, False)
-            elif label == 'vật liệu xây dựng':
-                add('vật liệu xây dựng', [row], tid)
-            elif label == 'biển quảng cáo':
+            elif label == 'Vật liệu xây dựng':
+                add('Vật liệu xây dựng', [row], tid)
+            elif label == 'Biển quảng cáo':
                 box = np.asarray(row['bbox_xyxy'])
                 supports = []
                 for support in valid:
-                    if support['label'] not in ('thân cây', 'cột điện'):
+                    if support['label'] not in ('Thân cây', 'Cột điện'):
                         continue
                     other = np.asarray(support['bbox_xyxy'])
                     distance = gap(box, other) / max(1, np.linalg.norm(box[2:] - box[:2]))
@@ -104,7 +106,7 @@ class Grouper:
                     support = min(supports, key=lambda item: item[:2])[2]
                     add('biển treo trên cây hoặc cột ứng viên', [row, support], tid, False)
                 else:
-                    add('biển quảng cáo', [row], tid, False)
+                    add('Biển quảng cáo', [row], tid, False)
 
         # Một người chỉ ghép vào một nhóm gần nhất; không dùng người làm cầu nối cụm.
         next_links = {key: value for key, value in self.person_links.items()
@@ -114,9 +116,9 @@ class Grouper:
             height = max(p[3] - p[1], 1)
             choices = []
             for i, candidate in enumerate(candidates):
-                if candidate['kind'] not in ('đồ dùng và hàng hoá', 'người và xe máy đứng yên', 'xe rác và người lái ứng viên'):
+                if candidate['kind'] not in ('đồ dùng và hàng hoá', 'người và xe máy đứng yên', 'xe rác và người lái ứng viên', 'Người và Máy móc'):
                     continue
-                objects = [r for r in candidate['rows'] if r['label'] != 'người']
+                objects = [r for r in candidate['rows'] if r['label'] != 'Người']
                 box = envelope(objects)
                 distance = min(gap(p, np.asarray(r['bbox_xyxy'])) for r in objects) / height
                 feet_close = any(abs(p[3] - r['bbox_xyxy'][3]) / height <= self.config['person_foot_height_ratio'] for r in objects)
@@ -127,9 +129,10 @@ class Grouper:
                 if distance <= self.config['person_gap_height_ratio'] and feet_close:
                     choices.append((distance, i))
             # Người–xe được xét riêng, không để cụm hàng hoá chiếm mất quan hệ này.
-            for bike_relation in (False, True):
+            for relation in ('objects', 'bike', 'machinery'):
                 selected = [(distance, i) for distance, i in choices
-                            if (candidates[i]['kind'] == 'người và xe máy đứng yên') == bike_relation]
+                            if ('bike' if candidates[i]['kind'] == 'người và xe máy đứng yên' else
+                                'machinery' if candidates[i]['kind'] == 'Người và Máy móc' else 'objects') == relation]
                 if not selected:
                     continue
                 candidate = candidates[min(selected)[1]]
@@ -152,7 +155,9 @@ class Grouper:
         current, output = {}, []
         for candidate in candidates:
             rows = candidate['rows']
-            if candidate['kind'] == 'người và xe máy đứng yên' and (not candidate['eligible'] or not any(r['label'] == 'người' for r in rows)):
+            if candidate['kind'] == 'Người và Máy móc' and not any(r['label'] == 'Người' for r in rows):
+                continue
+            if candidate['kind'] == 'người và xe máy đứng yên' and (not candidate['eligible'] or not any(r['label'] == 'Người' for r in rows)):
                 continue
             key = (candidate['kind'], candidate['anchor'])
             old = previous.get(key)
