@@ -3,6 +3,7 @@
 from pathlib import Path
 from threading import Lock
 
+import cv2
 import numpy as np
 from ultralytics import YOLO
 from ultralytics.engine.model import Model
@@ -37,12 +38,14 @@ class Detector:
             if not path.is_file():
                 raise FileNotFoundError(f"Không tìm thấy model: {path}")
             # Engine giữ nguyên metadata tên lớp và dùng hậu xử lý box giống bản .pt.
-            model = YOLO(str(path), task="detect")
+            model = YOLO(str(path), task=config.get("task", "detect"))
+            if model.task == "obb" and self.parallel_models:
+                raise ValueError("OBB chỉ dùng một model cho chế độ test detection.")
             names = model.names
             names = names if isinstance(names, dict) else dict(enumerate(names))
             mapping = {int(index): PHRASE_LABELS[name] for index, name in names.items()
                        if name in PHRASE_LABELS}
-            missing = set(PHRASE_LABELS) - set(names.values())
+            missing = set(PHRASE_LABELS.values()) - set(mapping.values())
             if missing:
                 raise ValueError(f'Checkpoint thiếu nhãn yêu cầu: {sorted(missing)}')
             if not mapping:
@@ -58,6 +61,13 @@ class Detector:
             max_det=self.max_detections,
             agnostic_nms=False, verbose=False, **kwargs,
         )[0]
+        if result.obb is not None:
+            boxes = result.obb
+            return [dict(bbox_xyxy=box, bbox_polygon=polygon, bbox_xywhr=rotated,
+                         confidence=score, class_index=index)
+                    for box, polygon, rotated, score, index in zip(boxes.xyxy.cpu().tolist(),
+                        boxes.xyxyxyxy.cpu().tolist(), boxes.xywhr.cpu().tolist(),
+                        boxes.conf.cpu().tolist(), boxes.cls.cpu().tolist())]
         return result.boxes.data.cpu().tolist() if result.boxes is not None else []
 
     def detect(self, frame):
@@ -73,24 +83,41 @@ class Detector:
                        [self._predict_one(model, mapping, frame) for model, mapping in self.models])
             detections = []
             for (_, mapping), rows in zip(self.models, outputs):
-                for x1, y1, x2, y2, score, index in rows:
+                for row in rows:
+                    extra = {}
+                    if isinstance(row, dict):
+                        x1, y1, x2, y2 = row['bbox_xyxy']
+                        score, index = row['confidence'], row['class_index']
+                        extra = {key: row[key] for key in ('bbox_polygon', 'bbox_xywhr')}
+                    else:
+                        x1, y1, x2, y2, score, index = row
                     label = mapping.get(int(index))
                     if (label is not None and score >= self.thresholds.get(label, self.confidence)
-                            and self._valid_box(label, [x1, y1, x2, y2], frame.shape)):
+                            and self._valid_box(label, [x1, y1, x2, y2], frame.shape, extra.get("bbox_polygon"))):
                         detections.append({"label": label, "confidence": float(score),
-                                           "bbox_xyxy": [float(x1), float(y1), float(x2), float(y2)]})
+                                           "bbox_xyxy": [float(x1), float(y1), float(x2), float(y2)], **extra})
             return self._merge(detections)
 
-    def _valid_box(self, label, box, shape):
+    def _valid_box(self, label, box, shape, polygon=None):
         """Lọc box theo tỷ lệ ảnh gốc trước NMS/tracking; không áp dụng cho bbox nhóm."""
         if not np.isfinite(box).all():
             return False
         height, width = shape[:2]
         x1, y1, x2, y2 = np.clip(box, [0, 0, 0, 0], [width, height, width, height])
         w, h = (x2 - x1) / width, (y2 - y1) / height
+        area = w*h
+        if polygon is not None:
+            points = np.asarray(polygon, np.float32)
+            if points.shape != (4,2) or not np.isfinite(points).all():
+                return False
+            # Chuẩn hoá cạnh trong hệ toạ độ ảnh để góc xoay không làm tăng kích thước giả.
+            edges = np.diff(np.vstack([points,points[0]]), axis=0)
+            lengths = np.linalg.norm(edges,axis=1)
+            w,h = float(min(lengths))/width,float(max(lengths))/height
+            area = cv2.contourArea(points)/(width*height)
         rule = self.bbox_limits.get(label, {})
         return (w > 0 and h > 0 and w <= rule.get('max_width_ratio', 1)
-                and h <= rule.get('max_height_ratio', 1) and w * h <= rule.get('max_area_ratio', 1))
+                and h <= rule.get('max_height_ratio', 1) and area <= rule.get('max_area_ratio', 1))
 
     def close(self):
         if self.parallel is not None:
@@ -110,6 +137,12 @@ class Detector:
                 intersection = float(np.prod(overlap))
                 area = float(np.prod(np.maximum(0, box[2:] - box[:2])))
                 other_area = float(np.prod(np.maximum(0, other[2:] - other[:2])))
+                if 'bbox_polygon' in candidate and 'bbox_polygon' in previous:
+                    # OBB phải so giao đa giác, không dùng diện tích AABB để loại nhầm box xoay.
+                    polygon = np.asarray(candidate['bbox_polygon'], np.float32)
+                    other_polygon = np.asarray(previous['bbox_polygon'], np.float32)
+                    intersection = float(cv2.intersectConvexConvex(polygon, other_polygon)[0])
+                    area, other_area = cv2.contourArea(polygon), cv2.contourArea(other_polygon)
                 union = area + other_area - intersection
                 smaller_area = min(area, other_area)
                 contained = (self.merge_ios is not None and smaller_area > 0

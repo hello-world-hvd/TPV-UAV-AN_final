@@ -1,7 +1,8 @@
+task: obb  # Nhánh ver3OBB dùng model box xoay.
 # Thiết lập model, tham số suy luận và ngưỡng nhận diện của hệ thống.
 # Đường dẫn tương đối được tính từ thư mục chứa file này.
 models:                         # Danh sách model chạy trên cùng ảnh; đường dẫn tương đối tính từ file YAML.
-  - ../models/yolo26m_finetune_detect.pt
+  - ../models/yolo26m_obb.pt
 
 inference:                      # Tham số suy luận áp dụng cho các model.
   device: mps                   # Thiết bị: cpu, mps (GPU Apple), hoặc "0" (GPU CUDA đầu tiên).

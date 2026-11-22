@@ -1,7 +1,10 @@
 """Tạo 5 nhóm theo quan hệ ảnh; xe máy đứng yên phải có detection và bù camera tin cậy."""
 
+import cv2
 import numpy as np
+from shapely.geometry import Point
 from grouping.stationary import StationaryState
+from core.geometry import distance, diagonal, center, coverage, polygon, dimensions, shape
 
 
 def envelope(rows):
@@ -63,16 +66,16 @@ class Grouper:
                         continue
                     box = np.asarray(row['bbox_xyxy'])
                     boxes = np.asarray([r['bbox_xyxy'] for r in members + [row]])
-                    diagonals = np.linalg.norm(boxes[:, 2:] - boxes[:, :2], axis=1)
+                    diagonals = [diagonal(r) for r in members + [row]]
                     scale = max(float(np.median(diagonals)), 1)
                     def near(member):
                         other = np.asarray(member['bbox_xyxy'])
                         chair = 'Ghế' in (row['label'], member['label'])
                         ratio = self.config['chair_gap_ratio'] if chair else self.config['object_gap_ratio']
                         reference = np.asarray(anchor['bbox_xyxy']) if anchor is not None else None
-                        local_scale = np.linalg.norm(reference[2:] - reference[:2]) if reference is not None else scale
-                        return gap(box, other) <= ratio * max(1, local_scale)
-                    centers = (boxes[:, :2] + boxes[:, 2:]) / 2
+                        local_scale = diagonal(anchor) if anchor is not None else scale
+                        return distance(row, member) <= ratio * max(1, local_scale)
+                    centers = np.asarray([center(r) for r in members + [row]])
                     if (any(near(m) for m in members) and (anchor is None or near(anchor)) and
                             np.linalg.norm(centers[:, None] - centers[None, :], axis=-1).max() <= self.config['cluster_span_ratio'] * scale):
                         members.append(row)
@@ -100,9 +103,7 @@ class Grouper:
                 for candidate in candidates:
                     if candidate['kind'] != 'đồ dùng và hàng hoá':
                         continue
-                    region = envelope([r for r in candidate['rows'] if r['label'] != 'Biển quảng cáo'])
-                    overlap = float(np.prod(np.maximum(0, np.minimum(box[2:], region[2:])
-                                                       - np.maximum(box[:2], region[:2])))) / area
+                    overlap = coverage(row, [r for r in candidate['rows'] if r['label'] != 'Biển quảng cáo'])
                     if overlap >= .5:
                         contained.append((overlap, candidate))
                 if contained:
@@ -113,9 +114,9 @@ class Grouper:
                     if support['label'] not in ('Thân cây', 'Cột điện'):
                         continue
                     other = np.asarray(support['bbox_xyxy'])
-                    distance = gap(box, other) / max(1, np.linalg.norm(box[2:] - box[:2]))
-                    if distance <= self.config['attachment_gap_ratio']:
-                        supports.append((distance, support['track_id'], support))
+                    separation = distance(row, support) / diagonal(row)
+                    if separation <= self.config['attachment_gap_ratio']:
+                        supports.append((separation, support['track_id'], support))
                 if supports:
                     support = min(supports, key=lambda item: item[:2])[2]
                     add('biển treo trên cây hoặc cột ứng viên', [row, support], tid, False)
@@ -127,21 +128,23 @@ class Grouper:
                       if timestamp - value['last'] <= self.config['relation_grace_seconds']}
         for person in people:
             p = np.asarray(person['bbox_xyxy'])
-            height = max(p[3] - p[1], 1)
+            height = max(dimensions(person)) if "bbox_polygon" in person else max(p[3]-p[1],1)
+            height = max(height,1)
             choices = []
             for i, candidate in enumerate(candidates):
                 if candidate['kind'] not in ('đồ dùng và hàng hoá', 'người và xe máy đứng yên', 'xe rác và người lái ứng viên', 'Người và Máy móc'):
                     continue
                 objects = [r for r in candidate['rows'] if r['label'] != 'Người']
                 box = envelope(objects)
-                distance = min(gap(p, np.asarray(r['bbox_xyxy'])) for r in objects) / height
+                separation = min(distance(person, r) for r in objects) / height
                 feet_close = any(abs(p[3] - r['bbox_xyxy'][3]) / height <= self.config['person_foot_height_ratio'] for r in objects)
                 if candidate['kind'] == 'xe rác và người lái ứng viên':
                     # Chỉ ứng viên khi tâm người nằm trong phần trên bbox xe, không khẳng định người lái.
-                    center = (p[:2] + p[2:]) / 2
-                    feet_close = box[0] <= center[0] <= box[2] and box[1] <= center[1] <= box[1] + .7 * (box[3] - box[1])
-                if distance <= self.config['person_gap_height_ratio'] and feet_close:
-                    choices.append((distance, i))
+                    person_center = polygon(person).mean(0)
+                    feet_close = shape(objects[0]).covers(Point(person_center))
+                    feet_close = feet_close and person_center[1] <= box[1] + .7*(box[3]-box[1])
+                if separation <= self.config['person_gap_height_ratio'] and feet_close:
+                    choices.append((separation, i))
             # Người–xe được xét riêng, không để cụm hàng hoá chiếm mất quan hệ này.
             for relation in ('objects', 'bike', 'machinery'):
                 selected = [(distance, i) for distance, i in choices
@@ -202,5 +205,9 @@ class Grouper:
                            'bbox_xyxy': envelope(rows).tolist(),
                            'status': 'confirmed' if confirmed else 'candidate',
                            'stationary_verified': candidate['eligible'] if candidate['kind'] == 'người và xe máy đứng yên' else None})
+            if any('bbox_polygon' in r for r in rows):
+                # Box nhóm bao trọn các polygon; crop phân loại vẫn dùng AABB bao ngoài.
+                points = np.concatenate([polygon(r) for r in rows]).astype(np.float32)
+                output[-1]['bbox_polygon'] = cv2.boxPoints(cv2.minAreaRect(points)).tolist()
         self.groups = current
         return output

@@ -386,3 +386,24 @@ Alert được gửi qua worker ngay khi clip hoàn tất, hàng đợi giới h
 `run_video.py` và `run_stream.py` tự nạp `.env` ở gốc dự án bằng `python-dotenv`. Biến môi trường đã đặt có ưu tiên cao hơn `.env`. Sao chép `.env.example` thành `.env`, điền key/URL rồi chạy bình thường; không commit `.env` và không tự đồng bộ key giữa local/server.
 
 Tối ưu minh chứng: khi có clip, mỗi frame chỉ lưu metadata nhóm/hành vi. Sau khi clip đóng, chọn frame minh chứng rồi giải mã clip alert một lượt và chỉ nén JPEG cho các frame được chọn. Ảnh nguyên frame được trích từ clip H.264 đã viz (cùng độ phân giải, có nén video), không giữ JPEG 4K ở mọi frame. `evidence_export_seconds` ghi thời gian chốt ảnh cho từng gói. Chế độ không ghi clip vẫn dùng JPEG đệm để xuất ảnh độc lập.
+
+### Nhánh ver3OBB: test riêng detection
+
+Model `models/yolo26m_obb.pt`, 13 nhãn yêu cầu (bỏ lớp Xe bán hàng rong). Test giữ bbox xoay bốn đỉnh, lưu cả `bbox_polygon`, `bbox_xywhr` và AABB `bbox_xyxy` trong JSONL; NMS bổ sung dùng giao đa giác. Tắt tracking/grouping để không làm mất polygon. Server dùng `yolo26m_obb.engine` TensorRT FP16 960×960; local vẫn dùng `.pt`.
+
+Server: `/home/abc/yuu_workspace/TPV-UAV-AN_ver3OBB`, dùng chung môi trường, data và FFmpeg của ver2, outputs riêng.
+
+```bash
+.venv/bin/python test/test_obb_detection.py --mode video --config configs/detection.obb.server.yaml --input data/video_test02.mp4 --output outputs/obb_video02
+.venv/bin/python test/test_obb_detection.py --mode images --config configs/detection.obb.server.yaml --input data/datatest --output outputs/obb_images
+```
+
+Chạy local bỏ `--config` để dùng `configs/detection.obb.yaml` (MPS). `detect_fps` trong YAML điều khiển lượt detect; `null` để detect mọi frame.
+
+### Rule OBB kế thừa ver2
+
+Nhánh ver3OBB dùng model OBB mặc định ở cả detection.yaml và detection.server.yaml. Giữ các ngưỡng tracking/grouping, thời gian xác nhận/hysteresis/grace của ver2; MobileNet confidence lấy mốc 0.6 như ver2 trên server. Pipeline vẫn dùng Kalman tâm/kích thước AABB làm trạng thái chuyển động, nhưng ghép detection OBB bằng IoU polygon, khoảng cách tâm và kích thước cạnh thật; giữ polygon qua camera-motion, optical-flow và prediction. Góc nhận lại trực tiếp từ detection, chưa lọc góc bằng Kalman riêng.
+
+Khoảng cách nhóm, biển–cây/cột và người–vật đo theo mép polygon. Biển nằm trong nhóm xét diện tích giao bao lồi polygon các đồ vật (ngưỡng 50%). Đứng yên dùng tâm/đường chéo OBB với lịch sử bù camera. Giới hạn bbox OBB dùng cạnh ngắn/dài chuẩn hoá theo kích thước ảnh và diện tích polygon; các ngưỡng cũ là mốc ban đầu cần kiểm tra thực tế. Điều kiện độ cao chân người/vùng trên xe rác vẫn là heuristic theo trục ảnh vì OBB không xác định hướng đầu/chân hay vị trí tài xế.
+
+Bbox nhóm/hành vi vẽ box xoay bao thành viên; crop MobileNet giữ AABB nhóm để không đổi phân phối ảnh đầu vào model đã fine-tune. Alert/BE và các rule hành vi giữ logic ver2. `test/test_obb_rules.py` kiểm tra hình học, giữ ID qua góc xoay, camera-motion, prediction và trạng thái đứng yên.

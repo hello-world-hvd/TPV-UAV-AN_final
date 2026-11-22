@@ -43,23 +43,23 @@ class BehaviorEngine:
             names = []
             if group['kind'] == 'đồ dùng và hàng hoá':
                 if not (len(members) == 1 and labels <= {'Ghế', 'Bàn', 'Xô'}):
-                    names.append('hoạt động kinh doanh trên vỉa hè')
+                    names.append('Kinh doanh/Bán hàng')
                 if {'Xô', 'Người'} <= labels:
-                    names.append('đổ nước tẩy rửa ra vỉa hè')
+                    names.append('Đổ nước')
             elif group['kind'] == 'Người và Máy móc' and {'Người', 'Máy móc'} <= labels and group['status'] == 'confirmed':
-                names.append('sửa chữa máy móc trên vỉa hè')
+                names.append('Sửa chữa máy móc')
             elif group['kind'] == 'xe rác và người lái ứng viên':
-                names.append('tập kết rác sai quy định')
+                names.append('Tập kết rác')
             elif group['kind'] == 'Vật liệu xây dựng':
-                names.append('tập kết vật liệu xây dựng sai quy định')
+                names.append('Tập kết vật liệu xây dựng')
             elif group['kind'] in ('Biển quảng cáo', 'biển treo trên cây hoặc cột ứng viên'):
-                names.append('đặt biển báo sai quy định')
+                names.append('Đặt biển báo')
             elif 'Phương tiện thu gom, vận chuyển rác' in labels:
-                names.append('tập kết rác sai quy định')
+                names.append('Tập kết rác')
             elif 'Vật liệu xây dựng' in labels:
-                names.append('tập kết vật liệu xây dựng sai quy định')
+                names.append('Tập kết vật liệu xây dựng')
             elif 'Biển quảng cáo' in labels:
-                names.append('đặt biển báo sai quy định')
+                names.append('Đặt biển báo')
             group['behaviors'] = [dict(name=name, source='group_rule', status='suspected',
                                        reason='Chỉ suy ra từ thành phần nhóm; chưa xác minh hành động/vị trí/quy định.') for name in names]
             if (group['kind'] == 'người và xe máy đứng yên' and group['status'] == 'confirmed'
@@ -91,6 +91,8 @@ class BehaviorEngine:
                     and scores[label] - scores[ranked[1]] >= self.config['min_margin'])
         group['activity_classification'] = {**result, 'class': label, 'accepted': accepted}
         if accepted:
-            name = {'repairing_vehicle': 'sửa xe', 'washing_vehicle': 'rửa xe'}[label]
+            # Chỉ gọi riêng hành vi khi confidence >0.85; còn lại giữ nhãn chung.
+            name = ({'repairing_vehicle': 'Sửa xe', 'washing_vehicle': 'Rửa xe'}[label]
+                    if scores[label] > .85 else 'Rửa xe / Sửa xe')
             group['behaviors'].append(dict(name=name, source='mobilenetv3', confidence=scores[label],
                                           status='suspected', sampled_at=result['timestamp']))

@@ -4,6 +4,7 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 
 from tracking.motion import CameraMotion, warp_box
+from core.geometry import polygon, shape, dimensions, transform as warp_polygon, attach_polygon
 
 
 def measurement(box):
@@ -32,6 +33,19 @@ def association_costs(tracks, detections, config):
     overlap = intersection / np.maximum(union, 1e-6)
     distance = np.linalg.norm(centers[None, :, :] - states[:, None, :2], axis=-1) / np.maximum(np.linalg.norm(states[:, 2:4], axis=-1), 1)[:, None]
     size_change = np.abs(np.log(sizes[None, :, :] / np.maximum(states[:, None, 2:4], 1))).max(-1)
+    for i, track in enumerate(tracks):
+        if 'polygon' not in track:
+            continue
+        predicted = {'bbox_polygon': track['polygon']}
+        a = shape(predicted)
+        for j, row in enumerate(detections):
+            if 'bbox_polygon' not in row or track['label'] != row['label']:
+                continue
+            b = shape(row)
+            overlap[i,j] = a.intersection(b).area / max(a.union(b).area, 1e-6)
+            size_a, size_b = np.sort(dimensions(predicted)), np.sort(dimensions(row))
+            size_change[i,j] = np.abs(np.log(np.maximum(size_b,1)/np.maximum(size_a,1))).max()
+            distance[i,j] = np.linalg.norm(polygon(row).mean(0)-polygon(predicted).mean(0))/max(np.linalg.norm(size_a),1)
     same_label = np.asarray([t["label"] for t in tracks])[:, None] == np.asarray([d["label"] for d in detections])[None, :]
     valid = same_label & (size_change < .8) & ((overlap >= config["min_iou"]) | (distance <= config["max_center_distance"]))
     costs[valid] = (1 - overlap + .2 * distance)[valid]
@@ -61,9 +75,13 @@ class Tracker:
             self.tracks.clear()
         self.tracks = [t for t in self.tracks if timestamp - t["last_seen"] <= self.config["max_lost_seconds"]]
         for t in self.tracks:
+            previous_box = bbox(t["x"]).copy()
             t["source"] = "prediction"
             if motion["reliable"]:
                 matrix = motion["matrix"]
+                if "polygon" in t:
+                    t["polygon"] = warp_polygon(t["polygon"], matrix)
+                previous_box = warp_box(previous_box, matrix)
                 t["x"][:4] = measurement(warp_box(bbox(t["x"]), matrix))
                 scale = np.hypot(matrix[0, 0], matrix[1, 0])
                 transform = np.eye(8)
@@ -83,6 +101,11 @@ class Tracker:
                     t["x"][4:6] = .5 * t["x"][4:6] + .5 * (observed[:2] - anchor[:2]) / dt
                 t["x"][:4] = observed
                 t["source"] = "optical_flow"
+            if 'polygon' in t:
+                # Giữ góc detection gần nhất; bù camera trước rồi đưa polygon tới trạng thái dự đoán.
+                target = bbox(t['x'])
+                ratio = np.maximum(target[2:]-target[:2],1)/np.maximum(previous_box[2:]-previous_box[:2],1)
+                t['polygon'] = (t['polygon']-(previous_box[:2]+previous_box[2:])/2)*ratio + (target[:2]+target[2:])/2
         if detections is not None:
             costs = association_costs(self.tracks, detections, self.config)
             matched_tracks, matched_detections = set(), set()
@@ -98,6 +121,9 @@ class Tracker:
                     residual[:, :4] -= gain
                     t["p"] = residual @ t["p"] @ residual.T + 4 * gain @ gain.T
                     t["observed_bbox"] = list(row["bbox_xyxy"])
+                    if 'bbox_polygon' in row:
+                        t['polygon'] = polygon(row).copy()
+                        t['observed_polygon'] = polygon(row).tolist()
                     t.update(last_seen=timestamp, confidence=row["confidence"], source="detection", hits=t["hits"] + 1)
                     t["confirmed"] = t["confirmed"] or t["hits"] >= self.config["min_hits"]
                     matched_tracks.add(i)
@@ -112,6 +138,9 @@ class Tracker:
                                     "x": np.r_[measurement(row["bbox_xyxy"]), np.zeros(4)], "p": np.eye(8) * 10,
                                     "last_seen": timestamp, "hits": 1, "confirmed": self.config["min_hits"] == 1,
                                     "confidence": row["confidence"], "observed_bbox": list(row["bbox_xyxy"]), "source": "detection"})
+                if 'bbox_polygon' in row:
+                    self.tracks[-1]['polygon'] = polygon(row).copy()
+                    self.tracks[-1]['observed_polygon'] = polygon(row).tolist()
                 self.next_id += 1
         output = []
         height, width = frame.shape[:2]
@@ -125,4 +154,7 @@ class Tracker:
             output.append({"track_id": t["id"], "label": t["label"], "confidence": t["confidence"],
                            "bbox_xyxy": box.tolist(), "position_source": t["source"], "detection_age_seconds": age,
                            "observed_bbox_xyxy": t["observed_bbox"]})
+            if 'polygon' in t:
+                attach_polygon(output[-1], t['polygon'])
+                output[-1]['observed_bbox_polygon'] = t['observed_polygon']
         return output

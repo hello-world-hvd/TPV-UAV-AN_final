@@ -50,7 +50,10 @@ def draw_detections(frame, detections, font, groups=(), group_ids_only=False):
             detail = info['reason'] if info['status'] != 'pending' else info['last_reset_reason']
             if info['reason'] in reasons:
                 text += f" | {reasons[info['reason']]}"
-        cv2.rectangle(result, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        if 'bbox_polygon' in row:
+            cv2.polylines(result, [np.rint(row['bbox_polygon']).astype(np.int32)], True, (0,255,0), 2)
+        else:
+            cv2.rectangle(result, (x1, y1), (x2, y2), (0, 255, 0), 2)
         patch = _label_patch(text, font)
         x = max(0, min(x1, width - 1))
         y = max(0, min(y1 - patch.shape[0], height - 1))
@@ -60,7 +63,11 @@ def draw_detections(frame, detections, font, groups=(), group_ids_only=False):
     for group in groups:
         x1, y1, x2, y2 = (int(round(value)) for value in group['bbox_xyxy'])
         behaviors = group.get('behaviors', [])
-        cv2.rectangle(result, (x1, y1), (x2, y2), (0, 0, 255) if behaviors else (255, 180, 0), 2)
+        color = (0,0,255) if behaviors else (255,180,0)
+        if 'bbox_polygon' in group:
+            cv2.polylines(result, [np.rint(group['bbox_polygon']).astype(np.int32)], True, color, 2)
+        else:
+            cv2.rectangle(result, (x1,y1), (x2,y2), color, 2)
         description = '; '.join(r['name'] for r in behaviors) if behaviors else group['kind']
         text = f"G{group['group_id']} {description}" + (f" ({group['status']})" if not behaviors else "")
         if group_ids_only:

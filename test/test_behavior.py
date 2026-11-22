@@ -37,18 +37,32 @@ def check_rules():
         with patch('behavior.engine.ActivityClassifier') as factory:
             factory.return_value.predict.return_value=[[.05,.05,.9]]
             engine.update(frame,tracks,groups,0)
-            assert groups[1]['behaviors'][0]['name']=='rửa xe'
+            assert groups[1]['behaviors'][0]['name']=='Rửa xe'
             assert len(groups[0]['behaviors'])==2
-            assert groups[5]['behaviors'][0]['name']=='sửa chữa máy móc trên vỉa hè'
-            assert groups[2]['behaviors'][0]['name']=='tập kết vật liệu xây dựng sai quy định'
-            assert groups[3]['behaviors'][0]['name']=='đặt biển báo sai quy định'
-            assert groups[4]['behaviors'][0]['name']=='tập kết rác sai quy định'
+            assert groups[5]['behaviors'][0]['name']=='Sửa chữa máy móc'
+            assert groups[2]['behaviors'][0]['name']=='Tập kết vật liệu xây dựng'
+            assert groups[3]['behaviors'][0]['name']=='Đặt biển báo'
+            assert groups[4]['behaviors'][0]['name']=='Tập kết rác'
             factory.return_value.predict.return_value=[[.9,.05,.05]]
             engine.update(frame,tracks,groups,1)
             assert not groups[1]['behaviors']
             factory.return_value.predict.return_value=[[.05,.9,.05]]
             engine.update(frame,tracks,groups,2)
-            assert groups[1]['behaviors'][0]['name']=='sửa xe'
+            assert groups[1]['behaviors'][0]['name']=='Sửa xe'
+        # Kiểm tra cả hai lớp tại ngưỡng hiện tại, đúng 0.85 và trên 0.85.
+        for label in ('repairing_vehicle', 'washing_vehicle'):
+            for confidence in (engine.config['confidence_threshold']-.01,
+                               engine.config['confidence_threshold'], .85, .8501):
+                scores = dict(other_activity=(1-confidence)/2,
+                              repairing_vehicle=(1-confidence)/2, washing_vehicle=(1-confidence)/2)
+                scores[label] = confidence
+                g = {'behaviors': []}
+                engine._attach(g, dict(timestamp=0, probabilities=scores))
+                if confidence < engine.config['confidence_threshold']:
+                    assert not g['behaviors']
+                else:
+                    expected = ('Sửa xe' if label == 'repairing_vehicle' else 'Rửa xe') if confidence > .85 else 'Rửa xe / Sửa xe'
+                    assert g['behaviors'][0]['name'] == expected
         chairs = [row(10, 'Ghế'), row(11, 'Ghế')]
         single = group(10, 'đồ dùng và hàng hoá', [10])
         engine.update(frame, chairs, [single], 3)
@@ -58,7 +72,7 @@ def check_rules():
             assert not single['behaviors']
         single['track_ids'].append(11)
         engine.update(frame, chairs, [single], 4)
-        assert single['behaviors'][0]['name'] == 'hoạt động kinh doanh trên vỉa hè'
+        assert single['behaviors'][0]['name'] == 'Kinh doanh/Bán hàng'
         tensor=ActivityClassifier.preprocess(frame,[10,10,80,90],.1)
         assert tensor.shape==(3,224,224) and np.isfinite(tensor.numpy()).all()
     print('Đạt: nhãn quy tắc, rửa/sửa xe, other_activity và crop RGB letterbox 224.')

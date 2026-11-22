@@ -2,6 +2,7 @@
 from collections import deque
 import numpy as np
 from tracking.motion import warp_box
+from core.geometry import transform
 
 
 class StationaryState:
@@ -33,14 +34,14 @@ class StationaryState:
                     s.update(stopped=False, low=0., high=0., speed=None)
             else:
                 s['last_valid'] = timestamp
-                s['history'] = deque((t, warp_box(box, motion['matrix'])) for t, box in s['history'])
+                s['history'] = deque((t, transform(box, motion['matrix']) if box.ndim == 2 else warp_box(box, motion['matrix'])) for t, box in s['history'])
                 if row['position_source'] == 'detection':
                     dt = timestamp - s['last_detection'] if s['last_detection'] is not None else 0.
                     if dt > c['max_observation_age']:
                         dt = 0.
                         s['history'].clear()
                     s['last_detection'] = timestamp
-                    box = np.asarray(row.get('observed_bbox_xyxy', row['bbox_xyxy']), float)
+                    box = np.asarray(row.get('observed_bbox_polygon', row.get('observed_bbox_xyxy', row['bbox_xyxy'])), float)
                     s['history'].append((timestamp, box.copy()))
                     while len(s['history']) > 2 and timestamp - s['history'][0][0] > c['motion_window_seconds']:
                         s['history'].popleft()
@@ -49,9 +50,9 @@ class StationaryState:
                     if len(samples) >= 3 and samples[-1][0] - samples[0][0] >= .3:
                         half = len(samples) // 2
                         first, last = samples[:half], samples[-half:]
-                        center = lambda items: np.median([(b[:2] + b[2:]) / 2 for _, b in items], axis=0)
+                        center = lambda items: np.median([b.mean(0) if b.ndim == 2 else (b[:2] + b[2:]) / 2 for _, b in items], axis=0)
                         elapsed = np.median([t for t, _ in last]) - np.median([t for t, _ in first])
-                        scale = max(1., float(np.median([np.linalg.norm(b[2:] - b[:2]) for _, b in samples])))
+                        scale = max(1., float(np.median([np.linalg.norm(b[2]-b[0]) if b.ndim == 2 else np.linalg.norm(b[2:] - b[:2]) for _, b in samples])))
                         s['speed'] = float(np.linalg.norm(center(last) - center(first)) / scale / max(elapsed, .001))
                         if s['speed'] <= c['stationary_speed_ratio']:
                             s['low'] += dt
