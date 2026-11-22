@@ -1,0 +1,7 @@
+# Nguồn camera; có thể ghi đè bằng --input. Không đưa URL chứa mật khẩu vào log.
+input_env: UAV_STREAM_URL                 # Ưu tiên URL trong biến môi trường này nếu có.
+input: "rtmp://14.232.161.78/live/stream?user=cn01&pass=cn0101"
+hls: "http://14.232.161.78:8888/live/stream/" # Nguồn thay thế với --source hls.
+output_fps: 30                            # FPS clip cảnh báo; bù frame lặp khi xử lý chậm hơn nguồn.
+reconnect_seconds: 3                      # Chờ trước khi kết nối lại khi luồng mất tín hiệu.
+timeout_ms: 5000                          # Timeout mở/đọc luồng, tránh treo vô hạn.

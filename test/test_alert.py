@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import cv2
 import numpy as np
@@ -19,6 +20,7 @@ def check_rules():
         root = Path(directory)
         config = yaml.safe_load((ROOT/'configs/alerts.yaml').read_text())
         config['confirmation_seconds'] = 0
+        config['evidence_min_seconds'] = 0
         path = root/'alerts.yaml'
         path.write_text(yaml.safe_dump(config))
         fps = 10
@@ -84,6 +86,35 @@ def check_rules():
         assert len({event['snapshot'] for event in report['events']}) == 1
         crop = cv2.imread(str(manager.output/'alert_000001'/evidence['snapshot']))
         assert crop.shape[:2] == (64, 96) and abs(float(crop.mean()) - 44) < 2
+        # Có clip: không nén JPEG từng frame, chỉ nén ảnh tại thời điểm đã chọn.
+        manager = AlertManager(root/'selected_only', path, True)
+        with patch('alerts.manager.cv2.imencode', wraps=cv2.imencode) as encode:
+            for i in range(100):
+                g = group(7, 'kinh doanh')
+                g['track_ids'] = [1,2] if 20 <= i < 70 else [1,2,3]
+                manager.update(np.full((64,96,3), i, np.uint8), i, fps, [g])
+            report = manager.finalize(None, fps, 100)['packages'][0]
+            assert encode.call_count == 1
+        evidence = report['evidence'][0]
+        assert evidence['frame'] == 44 and evidence['image_source'] == 'clip'
+        image = cv2.imread(str(manager.output/'alert_000001'/evidence['snapshot']))
+        assert image.shape[:2] == (64,96) and abs(float(image.mean()) - 44) < 6
+        # Lọc ảnh theo tổng thời gian, cộng các khoảng rời rạc của cùng hành vi.
+        config['evidence_min_seconds'] = 1.5
+        path.write_text(yaml.safe_dump(config))
+        manager = AlertManager(root/'minimum', path, False)
+        for i in range(90):
+            groups = []
+            if i < 10 or 20 <= i < 30:
+                groups.append(group(1, 'đủ ngưỡng'))
+            if i < 10:
+                groups.append(group(2, 'chưa đủ ngưỡng'))
+            manager.update(frame, i, fps, groups)
+        report = manager.finalize(None, fps, 90)['packages'][0]
+        assert [e['group_id'] for e in report['evidence']] == [1]
+        assert abs(report['evidence'][0]['behavior_seconds']['đủ ngưỡng'] - 2) < 1e-8
+        config['evidence_min_seconds'] = 0
+        path.write_text(yaml.safe_dump(config))
         # Mất hành vi đủ thời gian mới phát lại; không phát lại khi vẫn duy trì.
         manager=AlertManager(root/'rearm',path,False)
         frame=np.zeros((64,96,3),np.uint8)

@@ -4,3 +4,5 @@ post_seconds: 8.0          # Clip kết thúc sau cảnh báo đầu tiên 8 gi�
 rearm_seconds: 2.0         # Hành vi phải vắng đủ thời gian mới cảnh báo lại cho cùng nhóm.
 require_confirmed_group: false # Cho phép cảnh báo nghi vấn từ nhóm candidate (biển/xe rác).
 confirmation_seconds: 0.5  # Hành vi phải xuất hiện liên tục đủ thời gian trước khi phát.
+
+evidence_min_seconds: 1.5  # Tổng thời gian hành vi trong clip để lưu ảnh minh chứng; không cần liên tục.

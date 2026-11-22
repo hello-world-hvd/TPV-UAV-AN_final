@@ -361,3 +361,28 @@ Chỉ lưu clip cảnh báo:
 ```
 
 `time -v` ghi thời gian, CPU và RSS cực đại (không phải tổng RAM đồng thời của toàn bộ process tree). Quan sát GPU/VRAM/encoder trong terminal khác bằng `nvidia-smi dmon -s u` và `nvidia-smi`. Dùng thư mục output mới cho mỗi lần so sánh, tránh nhầm file cũ. `timing.json` có `finalize_alert_video` và thống kê `alert_encoder_workers`; thời gian tổng tính cả chờ ghi hết. `alert_export` chỉ còn chốt ảnh/metadata.
+
+### Pipeline video và stream — chỉ xuất alert
+
+```bash
+# Video: lưu alert tại workspace, không lưu video tổng.
+.venv/bin/python run_video.py --config configs/detection.server.yaml --input data/video_test04.mp4 --no-upload
+
+# RTMP cấu hình trong configs/stream.yaml; Ctrl+C để dừng và đóng clip.
+.venv/bin/python run_stream.py --config configs/detection.server.yaml --no-upload
+
+# HLS thay thế; URL thư mục player tự chuyển thành index.m3u8.
+.venv/bin/python run_stream.py --config configs/detection.server.yaml --source hls --no-upload
+```
+
+Hai lệnh dùng chung detect → tracking → grouping → behavior → cảnh báo. Chỉ vẽ bbox/chữ hành vi màu đỏ (`B{id}`), không vẽ object/nhóm chưa có hành vi. Đầu ra chỉ alert: clip −2/+8 giây, ảnh nguyên frame đã viz, metadata; không ghi video tổng/JSONL từng frame. `evidence_min_seconds: 1.5` trong `configs/alerts.yaml` lọc ảnh theo tổng thời gian xuất hiện của hành vi trong clip, không cần liên tục. Mỗi nhóm dùng chung một ảnh cho các hành vi đủ ngưỡng; clip vẫn lưu khi chưa có ảnh đủ điều kiện.
+
+Stream đọc nền, giữ frame mới nhất để tránh trễ dần. Clip giữ `output_fps` bằng cách lặp frame viz gần nhất ở các slot thiếu; thời lượng tính theo thời gian nhận frame trên server, không phải timestamp capture tại camera. Mất kết nối/gián đoạn >2 giây: đóng clip cũ, ghi thiếu post-roll, tự nối lại và reset tracking. Ghi đè nguồn bằng `UAV_STREAM_URL` hoặc `--input`. URL/mật khẩu không được ghi vào log ứng dụng. HLS `index.m3u8` cần được camera server cung cấp; link player HTML không đọc trực tiếp được như video.
+
+Bật BE bằng `--upload` hoặc `enabled: true` trong `configs/backend.yaml`. Cần đặt `TPV_UPLOAD_API_KEY` trong môi trường và điền GPS thực `location` (`latitude, longitude`). Gửi một gói cho một clip, tên hành vi gộp trong `behavior_name`, ảnh chỉ một lần cho mỗi nhóm. Hợp đồng tương thích UAV cũ: `/api/uploads/initiate` → PUT ảnh → `/part-urls` → PUT video parts → `/complete`. Không dùng danh tính/confidence giả. Timestamp file video mặc định lấy mốc lúc chạy; nếu biết thời gian ghi, truyền `--recording-start '2026-11-22T10:00:00+07:00'`.
+
+Alert được gửi qua worker ngay khi clip hoàn tất, hàng đợi giới hạn 2 gói. Bật upload vẫn dùng file tạm; chỉ xoá folder alert sau khi BE trả đúng `violation_id`, `success: true`, `status: ready`. Lỗi hoặc timeout giữ file và `upload.json`, không tự gọi lại initiate/complete có nguy cơ tạo trùng. Tắt upload lưu alert ở các thư mục thời gian trong `outputs/alerts/`. `summary.json` giữ thống kê của lượt chạy. Unit test chỉ dùng BE giả lập.
+
+`run_video.py` và `run_stream.py` tự nạp `.env` ở gốc dự án bằng `python-dotenv`. Biến môi trường đã đặt có ưu tiên cao hơn `.env`. Sao chép `.env.example` thành `.env`, điền key/URL rồi chạy bình thường; không commit `.env` và không tự đồng bộ key giữa local/server.
+
+Tối ưu minh chứng: khi có clip, mỗi frame chỉ lưu metadata nhóm/hành vi. Sau khi clip đóng, chọn frame minh chứng rồi giải mã clip alert một lượt và chỉ nén JPEG cho các frame được chọn. Ảnh nguyên frame được trích từ clip H.264 đã viz (cùng độ phân giải, có nén video), không giữ JPEG 4K ở mọi frame. `evidence_export_seconds` ghi thời gian chốt ảnh cho từng gói. Chế độ không ghi clip vẫn dùng JPEG đệm để xuất ảnh độc lập.
