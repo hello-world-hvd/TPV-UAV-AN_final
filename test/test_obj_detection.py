@@ -84,7 +84,9 @@ def main():
     parser.add_argument('--alerts', action='store_true', help='Xuất ảnh, clip và metadata cảnh báo')
     parser.add_argument('--alert-config', type=Path, default=root / 'configs' / 'alerts.yaml')
     parser.add_argument('--save-video', action=argparse.BooleanOptionalAction, default=True,
-                        help='Lưu video tổng và clip; tắt vẫn lưu ảnh/metadata cảnh báo')
+                        help='Lưu video tổng; --no-save-video chỉ tắt video tổng, không tắt clip cảnh báo')
+    parser.add_argument('--save-alert-video', action=argparse.BooleanOptionalAction, default=True,
+                        help='Bật/tắt ghi clip cảnh báo độc lập với video tổng')
     parser.add_argument("--mode", required=True, choices=["images", "video"])
     parser.add_argument("--input", type=Path, help="Thư mục ảnh hoặc đường dẫn video")
     parser.add_argument("--max-frames", type=int, default=0, help="Giới hạn frame video; 0: toàn bộ")
@@ -138,7 +140,7 @@ def main():
             group_config = yaml.safe_load(args.grouping_config.read_text(encoding="utf-8"))
             grouper = Grouper(group_config) if tracker is not None and group_config['enabled'] else None
             behavior = BehaviorEngine(args.behavior_config, config['inference']['device']) if grouper else None
-            alerts = AlertManager(args.output, args.alert_config, args.save_video) if args.alerts else None
+            alerts = AlertManager(args.output, args.alert_config, args.save_alert_video, config['output']['video']) if args.alerts else None
             if alerts is not None and behavior is None:
                 parser.error('Cảnh báo yêu cầu bật tracking và grouping.')
             stages = StageTimer()
@@ -227,6 +229,9 @@ def main():
                     capture.release()
                     if writer is not None:
                         writer.release()
+                with stages.measure("finalize_alert_video"):
+                    if alerts is not None:
+                        alerts.close()
                 with stages.measure("flush_jsonl"):
                     records.flush()
             if alerts is not None:
@@ -249,6 +254,9 @@ def main():
         stats["processing_fps_including_finalize"] = index / video_elapsed
         stats["output_video_bytes"] = (args.output / "detected.mp4").stat().st_size if args.save_video else 0
         stats['save_video'] = args.save_video
+        stats['save_alert_video'] = args.save_alert_video
+        if alerts is not None:
+            stats['alert_encoder_workers'] = alerts.video_stats
         stats["video_encoder"] = config["output"]["video"]
         if isinstance(writer, ThreadedWriter):
             stats["encoder_worker"] = {"write_seconds": writer.write_seconds,

@@ -49,6 +49,16 @@ def check_rules():
             factory.return_value.predict.return_value=[[.05,.9,.05]]
             engine.update(frame,tracks,groups,2)
             assert groups[1]['behaviors'][0]['name']=='sửa xe'
+        chairs = [row(10, 'Ghế'), row(11, 'Ghế')]
+        single = group(10, 'đồ dùng và hàng hoá', [10])
+        engine.update(frame, chairs, [single], 3)
+        assert not single['behaviors']
+        for label in ('Bàn', 'Xô'):
+            engine.update(frame, [row(10, label)], [single], 3)
+            assert not single['behaviors']
+        single['track_ids'].append(11)
+        engine.update(frame, chairs, [single], 4)
+        assert single['behaviors'][0]['name'] == 'hoạt động kinh doanh trên vỉa hè'
         tensor=ActivityClassifier.preprocess(frame,[10,10,80,90],.1)
         assert tensor.shape==(3,224,224) and np.isfinite(tensor.numpy()).all()
     print('Đạt: nhãn quy tắc, rửa/sửa xe, other_activity và crop RGB letterbox 224.')

@@ -42,7 +42,8 @@ class BehaviorEngine:
             labels = {r['label'] for r in members}
             names = []
             if group['kind'] == 'đồ dùng và hàng hoá':
-                names.append('hoạt động kinh doanh trên vỉa hè')
+                if not (len(members) == 1 and labels <= {'Ghế', 'Bàn', 'Xô'}):
+                    names.append('hoạt động kinh doanh trên vỉa hè')
                 if {'Xô', 'Người'} <= labels:
                     names.append('đổ nước tẩy rửa ra vỉa hè')
             elif group['kind'] == 'Người và Máy móc' and {'Người', 'Máy móc'} <= labels and group['status'] == 'confirmed':

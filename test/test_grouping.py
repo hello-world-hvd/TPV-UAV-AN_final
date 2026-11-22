@@ -38,6 +38,22 @@ def check_rules():
     for i in range(40,80):
         rows=sample(i-40,True);g.update(rows,6+(i-40)*.1,motion)
     assert not rows[0]['stationary_info']['stationary_verified']
+    stable = Grouper(dict(config))
+    chairs = [row(10, 'Ghế', [0,0,20,30]), row(11, 'Ghế', [22,0,42,30])]
+    initial = stable.update(chairs, 0, motion)[0]['group_id']
+    # Mất vật làm mốc rồi thêm lại vẫn là nhóm cũ.
+    assert stable.update(chairs[1:], .1, motion)[0]['group_id'] == initial
+    assert stable.update(chairs, .2, motion)[0]['group_id'] == initial
+    assert stable.update([], .3, motion) == []
+    assert stable.update(chairs, .4, motion)[0]['group_id'] == initial
+    signage = Grouper(dict(config))
+    rows = [row(20, 'Bàn', [0,0,100,100]), row(21, 'Biển quảng cáo', [20,20,60,60]),
+            row(22, 'Biển quảng cáo', [200,200,230,230])]
+    grouped = signage.update(rows, 0, motion)
+    goods = next(r for r in grouped if r['kind'] == 'đồ dùng và hàng hoá')
+    assert goods['track_ids'] == [20, 21]
+    assert sum(21 in r['track_ids'] for r in grouped) == 1
+    assert any(r['kind'] == 'Biển quảng cáo' and r['track_ids'] == [22] for r in grouped)
     print('Đạt: bbox rung, hysteresis, camera gián đoạn, xe di chuyển và ghép người–xe song song đồ dùng.')
 
 

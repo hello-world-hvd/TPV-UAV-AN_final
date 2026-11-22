@@ -94,6 +94,20 @@ class Grouper:
                 add('Vật liệu xây dựng', [row], tid)
             elif label == 'Biển quảng cáo':
                 box = np.asarray(row['bbox_xyxy'])
+                # Biển nằm phần lớn trong vùng bán hàng thì thuộc nhóm này, không tạo nhóm biển riêng.
+                contained = []
+                area = max(1., float(np.prod(np.maximum(0, box[2:] - box[:2]))))
+                for candidate in candidates:
+                    if candidate['kind'] != 'đồ dùng và hàng hoá':
+                        continue
+                    region = envelope([r for r in candidate['rows'] if r['label'] != 'Biển quảng cáo'])
+                    overlap = float(np.prod(np.maximum(0, np.minimum(box[2:], region[2:])
+                                                       - np.maximum(box[:2], region[:2])))) / area
+                    if overlap >= .5:
+                        contained.append((overlap, candidate))
+                if contained:
+                    max(contained, key=lambda item: item[0])[1]['rows'].append(row)
+                    continue
                 supports = []
                 for support in valid:
                     if support['label'] not in ('Thân cây', 'Cột điện'):
@@ -152,7 +166,10 @@ class Grouper:
         self.last_timestamp = timestamp
 
         previous = self.groups
-        current, output = {}, []
+        current = {key: value for key, value in previous.items()
+                   if timestamp - value.get('last', timestamp) <= self.config['relation_grace_seconds']}
+        output, used_ids = [], set()
+        candidates.sort(key=lambda c: -len(c['rows']))
         for candidate in candidates:
             rows = candidate['rows']
             if candidate['kind'] == 'Người và Máy móc' and not any(r['label'] == 'Người' for r in rows):
@@ -160,10 +177,25 @@ class Grouper:
             if candidate['kind'] == 'người và xe máy đứng yên' and (not candidate['eligible'] or not any(r['label'] == 'Người' for r in rows)):
                 continue
             key = (candidate['kind'], candidate['anchor'])
-            old = previous.get(key)
+            ids = {r['track_id'] for r in rows}
+            old = current.get(key)
+            if old is not None and old['id'] in used_ids:
+                old = None
+            if old is None:
+                def family(kind):
+                    return 'sign' if kind in ('Biển quảng cáo', 'biển treo trên cây hoặc cột ứng viên') else kind
+                matches = [(len(ids & value.get('members', set())), value)
+                           for (kind, _), value in current.items()
+                           if value['id'] not in used_ids and family(kind) == family(candidate['kind'])
+                           and ids & value.get('members', set())]
+                if matches:
+                    old = max(matches, key=lambda item: item[0])[1]
             if old is None:
                 old = {'id': self.next_id, 'first': timestamp}
                 self.next_id += 1
+            used_ids.add(old['id'])
+            current = {k: v for k, v in current.items() if v['id'] != old['id']}
+            old = {**old, 'last': timestamp, 'members': ids}
             current[key] = old
             confirmed = candidate['eligible'] and timestamp - old['first'] >= self.config['confirm_seconds']
             output.append({'group_id': old['id'], 'kind': candidate['kind'], 'track_ids': sorted(r['track_id'] for r in rows),

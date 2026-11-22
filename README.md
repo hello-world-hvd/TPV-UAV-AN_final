@@ -317,7 +317,7 @@ Bài này dùng các ảnh PNG trong `data/datatest`, warmup và đo luân phiê
   --output outputs/alerts_video04 --save-video
 ```
 
-Dùng `--no-save-video` để không ghi video tổng/clip; vẫn lưu ảnh viz và metadata.
+Dùng `--no-save-video` để chỉ tắt video tổng; clip cảnh báo vẫn được ghi. Thêm `--no-save-alert-video` nếu muốn tắt cả clip.
 Mặc định lưu video. Clip lấy từ 2 giây trước đến 8 giây sau cảnh báo đầu tiên,
 không kéo dài khi có hành vi mới. Hành vi khác trong cùng cửa sổ được thêm vào
 metadata kèm ảnh viz tại frame phát cảnh báo riêng. Cắt clip sau khi video tổng
@@ -337,3 +337,27 @@ Kiểm tra quy tắc và clip tổng hợp:
 ```bash
 .venv/bin/python test/test_alert.py --mode unit
 ```
+
+### Ảnh minh chứng cảnh báo
+
+Một ghế đơn lẻ không tạo hành vi kinh doanh. ID nhóm/hành vi được giữ khi thêm hoặc mất thành viên còn liên hệ với nhóm trước; lịch sử gián đoạn tuân theo `relation_grace_seconds`.
+
+Trong clip cảnh báo, mỗi nhóm chỉ lưu một ảnh crop đã viz, dùng chung cho các hành vi thuộc nhóm đó. Hệ thống chọn tổ hợp track cùng tồn tại liên tục lâu nhất và lấy frame giữa khoảng này; nếu bằng thời gian thì ưu tiên tổ hợp nhiều thành viên hơn. Metadata `evidence` ghi frame, thời gian, bbox crop, track thành viên và danh sách hành vi. Ảnh được chốt khi đủ cửa sổ clip, kể cả khi tắt lưu video.
+
+### Ghi clip cảnh báo trực tiếp và so sánh tài nguyên
+
+Clip cảnh báo nhận frame đã viz từ bộ đệm vòng 2 giây, rồi ghi tiếp tới 8 giây sau cảnh báo bằng worker riêng. Encoder dùng cấu hình `output.video` (NVENC trên server). Không đọc lại video chính để cắt clip. Hàng đợi có giới hạn, không bỏ frame; cuối lượt chạy luôn chờ tất cả encoder hoàn tất. Bộ đệm giữ frame BGR nguyên độ phân giải, dùng chung cho các clip; khoảng 356 MiB cho 2 giây 1080p/30 FPS, chưa tính hàng đợi và ảnh minh chứng.
+
+Lưu cả video chính và clip cảnh báo trên server:
+
+```bash
+/usr/bin/time -v -o outputs/resources_both.txt .venv/bin/python test/test_alert.py --mode video --config configs/detection.server.yaml --input data/video_test04.mp4 --output outputs/alerts_both --save-video --save-alert-video
+```
+
+Chỉ lưu clip cảnh báo:
+
+```bash
+/usr/bin/time -v -o outputs/resources_alert_only.txt .venv/bin/python test/test_alert.py --mode video --config configs/detection.server.yaml --input data/video_test04.mp4 --output outputs/alerts_only --no-save-video --save-alert-video
+```
+
+`time -v` ghi thời gian, CPU và RSS cực đại (không phải tổng RAM đồng thời của toàn bộ process tree). Quan sát GPU/VRAM/encoder trong terminal khác bằng `nvidia-smi dmon -s u` và `nvidia-smi`. Dùng thư mục output mới cho mỗi lần so sánh, tránh nhầm file cũ. `timing.json` có `finalize_alert_video` và thống kê `alert_encoder_workers`; thời gian tổng tính cả chờ ghi hết. `alert_export` chỉ còn chốt ảnh/metadata.
