@@ -62,10 +62,10 @@ def draw_detections(frame, detections, font, groups=(), group_ids_only=False):
         cv2.rectangle(result, (x1, y1), (x2, y2), (255, 180, 0), 2)
         behaviors = group.get('behaviors', [])
         description = '; '.join(r['name'] for r in behaviors) if behaviors else group['kind']
-        text = f"G{group['group_id']} {description} ({'nghi vấn' if behaviors else group['status']})"
+        text = f"G{group['group_id']} {description}" + (f" ({group['status']})" if not behaviors else "")
         if group_ids_only:
             # Một bbox/nhóm: G khi chưa có hành vi; B khi đã gán cảnh báo hành vi.
-            text = (f"B{group['group_id']} {description} (nghi vấn)" if behaviors
+            text = (f"B{group['group_id']} {description}" if behaviors
                     else f"G{group['group_id']}" + (": Người và Máy móc" if group['kind'] == 'Người và Máy móc' else ''))
         patch = _label_patch(text, font)
         x, y = max(0, min(x1, width - 1)), max(0, min(y2 + 2, height - 1))

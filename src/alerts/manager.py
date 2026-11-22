@@ -1,4 +1,4 @@
-"""Gom cảnh báo, giữ clip -2/+8s và chọn một crop viz ổn định lâu nhất cho mỗi nhóm trong clip."""
+"""Gom cảnh báo, giữ clip -2/+8s và chọn một frame nguyên đã viz hành vi tại khoảng ổn định lâu nhất cho mỗi nhóm trong clip."""
 
 import json
 import math
@@ -42,20 +42,18 @@ class AlertManager:
             self.pending.clear()
         self.states = {key: last for key, last in self.states.items()
                        if timestamp - last <= self.config['rearm_seconds']}
-        # Chỉ giữ crop JPEG trong cửa sổ đang mở và phần đệm trước cảnh báo.
+        # Lưu nguyên frame đã viz để giữ đủ bbox, ID và chữ hành vi ngoài mép nhóm.
+        # Nén một lần rồi dùng chung bytes cho mọi nhóm có hành vi trong frame.
         samples = {}
-        for group in groups:
-            box = group.get('bbox_xyxy', [0, 0, frame.shape[1], frame.shape[0]])
-            x1, y1, x2, y2 = box
-            x1, y1 = max(0, math.floor(x1)), max(0, math.floor(y1))
-            x2, y2 = min(frame.shape[1], math.ceil(x2)), min(frame.shape[0], math.ceil(y2))
-            if x2 <= x1 or y2 <= y1:
-                continue
-            ok, jpeg = cv2.imencode('.jpg', frame[y1:y2, x1:x2], [cv2.IMWRITE_JPEG_QUALITY, 95])
+        visible = [group for group in groups if group.get('behaviors')]
+        if visible:
+            ok, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
             if not ok:
                 raise RuntimeError('Không mã hoá được ảnh minh chứng.')
-            samples[group['group_id']] = dict(signature=tuple(sorted(group['track_ids'])),
-                jpeg=jpeg.tobytes(), bbox=[x1, y1, x2, y2])
+            image = jpeg.tobytes()
+            for group in visible:
+                samples[group['group_id']] = dict(signature=tuple(sorted(group['track_ids'])),
+                    jpeg=image, bbox=list(group.get('bbox_xyxy', [0, 0, frame.shape[1], frame.shape[0]])))
         self.history.append((frame_index, timestamp, samples))
         if self.save_video:
             self.frames.append((frame_index, frame.copy()))
@@ -166,7 +164,7 @@ class AlertManager:
             name = f'group_{gid:06d}.jpg'
             (folder / name).write_bytes(sample['jpeg'])
             evidence[gid] = dict(group_id=gid, snapshot=name, frame=index, time=timestamp,
-                bbox_xyxy=sample['bbox'], track_ids=list(sample['signature']),
+                bbox_xyxy=sample['bbox'], image_scope='full_frame', track_ids=list(sample['signature']),
                 stable_start=run[0][1], stable_end=run[-1][1] + 1/fps,
                 stable_seconds=len(run)/fps,
                 behavior_names=list(dict.fromkeys(e['behavior'] for e in self.events

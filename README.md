@@ -342,7 +342,7 @@ Kiểm tra quy tắc và clip tổng hợp:
 
 Một ghế đơn lẻ không tạo hành vi kinh doanh. ID nhóm/hành vi được giữ khi thêm hoặc mất thành viên còn liên hệ với nhóm trước; lịch sử gián đoạn tuân theo `relation_grace_seconds`.
 
-Trong clip cảnh báo, mỗi nhóm chỉ lưu một ảnh crop đã viz, dùng chung cho các hành vi thuộc nhóm đó. Hệ thống chọn tổ hợp track cùng tồn tại liên tục lâu nhất và lấy frame giữa khoảng này; nếu bằng thời gian thì ưu tiên tổ hợp nhiều thành viên hơn. Metadata `evidence` ghi frame, thời gian, bbox crop, track thành viên và danh sách hành vi. Ảnh được chốt khi đủ cửa sổ clip, kể cả khi tắt lưu video.
+Trong clip cảnh báo, mỗi nhóm chỉ lưu một ảnh nguyên frame đã viz hành vi, dùng chung cho các hành vi thuộc nhóm đó. Hệ thống chọn tổ hợp track cùng tồn tại liên tục lâu nhất và lấy frame giữa khoảng này; nếu bằng thời gian thì ưu tiên tổ hợp nhiều thành viên hơn. Metadata `evidence` ghi frame, thời gian, bbox nhóm, track thành viên và danh sách hành vi. Ảnh được chốt khi đủ cửa sổ clip, kể cả khi tắt lưu video.
 
 ### Ghi clip cảnh báo trực tiếp và so sánh tài nguyên
 

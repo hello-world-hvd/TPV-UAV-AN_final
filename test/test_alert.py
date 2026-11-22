@@ -67,7 +67,7 @@ def check_rules():
         assert capture.get(cv2.CAP_PROP_FRAME_COUNT) == 75
         capture.release()
         assert sum(r['frames_written'] for r in managers[0].video_stats) == 165
-        # Cùng nhóm có hai hành vi chỉ một crop; chọn đoạn ổn định dài nhất, không chọn lúc phát.
+        # Cùng nhóm có hai hành vi chỉ một frame; chọn đoạn ổn định dài nhất, không chọn lúc phát.
         manager = AlertManager(root/'evidence', path, False)
         for i in range(100):
             g = group(7, 'kinh doanh')
@@ -83,7 +83,7 @@ def check_rules():
         assert evidence['track_ids'] == [1, 2]
         assert len({event['snapshot'] for event in report['events']}) == 1
         crop = cv2.imread(str(manager.output/'alert_000001'/evidence['snapshot']))
-        assert crop.shape[:2] == (40, 60) and abs(float(crop.mean()) - 44) < 2
+        assert crop.shape[:2] == (64, 96) and abs(float(crop.mean()) - 44) < 2
         # Mất hành vi đủ thời gian mới phát lại; không phát lại khi vẫn duy trì.
         manager=AlertManager(root/'rearm',path,False)
         frame=np.zeros((64,96,3),np.uint8)
