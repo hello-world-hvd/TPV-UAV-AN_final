@@ -70,7 +70,7 @@ Các file `__init__.py` trong bảy package `core`, `pipeline`, `detection`, `tr
 | `run_stream.py` | Gọi `pipeline.runner.main('stream')` |
 | `pyproject.toml` | Khai báo package `uav-analysis`, tìm package trong `src`, dependencies lấy từ `requirements.txt` |
 | `requirements.txt` | Torch/Ultralytics, OpenCV, Shapely, SciPy, Pillow, YAML, requests, dotenv… |
-| `.env.example` | Mẫu `TPV_UPLOAD_API_KEY`, `UAV_STREAM_URL`; không chứa key thật |
+| `.env.example` | Mẫu `TPV_UPLOAD_API_KEY`, `UAV_STREAM_URL`, `UAV_VIZ_URL`; không chứa key thật |
 | `.gitignore` | Bỏ môi trường, models/data/outputs và `.env`; cho phép `.env.example` |
 | `README.md` | Hướng dẫn chạy, thay đổi và ví dụ; tài liệu này giải thích kiến trúc chi tiết |
 | `docs/server.md` | Hướng dẫn môi trường/deploy server có sẵn; đường dẫn cần chọn theo phiên bản |
@@ -104,7 +104,8 @@ Các số trên minh họa cấu trúc, không phải mẫu hình học chuẩn 
 
 | Loại | Nguồn | Dùng cho |
 |---|---|---|
-| Video timestamp | `frame_index / fps` | Lịch detect, tuổi track, dwell, clip file |
+| Timeline media | `frame_index / fps` | Clip/event; file video bình thường cũng dùng cho lịch detect/track/dwell |
+| Đồng hồ quan sát | Timestamp tích lũy, trừ khoảng PAUSE khi resume | Tracking/grouping/cache, confirmation/rearm; không cộng thời gian nguồn mất |
 | Stream timestamp | `time.monotonic()` khi nhận frame, quy đổi sang slot output | Lịch xử lý/clip live, không phải capture PTS camera |
 | Thời gian sự kiện gửi BE | Mốc `started_at` có múi giờ + `alert_time` | `detected_at` |
 | Wall time xử lý | `time.perf_counter()` | FPS xử lý và bảng thời gian |
@@ -124,7 +125,8 @@ Video chạy chậm hơn realtime không làm clip bị tua chậm: clip ghi FPS
 | File | Thành phần | Trách nhiệm |
 |---|---|---|
 | `src/pipeline/runner.py` | `main`, `AlertPipeline`, `measure` | Nạp cấu hình, chọn nguồn, lịch detect, gọi các module, đóng tài nguyên, thống kê |
-| `src/pipeline/stream.py` | `StreamReader` | Đọc RTMP/HLS ở thread riêng, queue 1 frame, timeout/reconnect |
+| `src/pipeline/stream.py` | `StreamReader` | Đọc RTMP/HLS ở thread riêng, queue 1 frame, timeout/reconnect, polling và FPS nguồn |
+| `src/pipeline/publish.py` | `RTMPPublisher` | Phát viz RTMP bằng worker, queue 2 bỏ cũ, encoder độc lập clip |
 | `src/pipeline/__init__.py` | Package | Mô tả package |
 
 ### 5.3 Khởi tạo và xử lý frame
@@ -133,14 +135,14 @@ Video chạy chậm hơn realtime không làm clip bị tua chậm: clip ghi FPS
 
 `AlertPipeline` tạo detector, timer, tracker, grouper, behavior, font, manager cảnh báo. Các config tracking/grouping/behavior được lấy từ `ROOT/configs/…`; `--config` chỉ chọn detection/output, không tự chọn một bộ YAML cùng tên.
 
-Mỗi `process(frame,index)`:
+Mỗi `process(frame,index,resume=False)`:
 
-1. Tính slot detect theo timestamp và `detect_fps`; `null` dùng FPS pipeline.
+1. Tính timeline media và đồng hồ quan sát. Sau tạm ngưng, đồng hồ quan sát chỉ tiến một frame thay vì cộng cả gap. Tính slot detect theo đồng hồ quan sát và `detect_fps`; resume luôn buộc detect.
 2. Đến slot mới: detect và đo thời gian. Chưa đến slot: truyền `detections=None`.
-3. Tracker → Grouper → BehaviorEngine.
+3. Tracker → kiểm tra ghép lại khi resume → Grouper → BehaviorEngine. Không ghép được ID cũ thì reset lịch sử và log; nhóm không dùng dự đoán cũ chưa ghép lại làm bằng chứng ở lượt resume.
 4. Chỉ giữ nhóm có `behaviors` để render và đưa vào alert; không vẽ object/nhóm chưa có hành vi trong runner thật.
-5. Stream thiếu slot: đưa lại frame viz/metadata trước đó vào manager cho các slot thiếu, rồi đưa frame mới.
-6. Ghi thống kê; mỗi 100 frame xử lý báo FPS wall time.
+5. Stream thiếu slot: đưa frame viz trước đó vào manager với `observed=False`, không metadata bằng chứng/event mới; frame thật truyền `observation_time` và `observation_seconds`. Publisher nhận frame viz thật ở worker riêng.
+6. Ghi thống kê; mỗi 100 frame xử lý báo FPS wall time. Vòng stream mỗi 5 giây còn báo FPS nguồn khai báo, FPS nhận thực trong 5 giây và FPS xử lý.
 
 `close()` finalize alert, đóng detector và in các stage. `main()` còn chờ delivery worker hoàn tất trước khi ghi summary. `elapsed_seconds` từng phiên pipeline không bao gồm toàn bộ thời gian chờ upload cuối của `main()`.
 
@@ -152,9 +154,13 @@ Mỗi `process(frame,index)`:
 - URL HTTP(S) kết thúc `/` tự thêm `index.m3u8`. Đây là giả định đường dẫn playlist, cần xác nhận khi camera phát.
 - Reader queue **1**: đầy thì bỏ frame cũ, không để backlog tích lũy.
 - Output index là `round((moment-origin)*output_fps)`. Cùng slot thì bỏ qua; nguồn nhanh hơn output sẽ giảm số frame xử lý.
-- Khi nguồn chậm/AI chậm: lặp frame viz cũ để clip CFR giữ thời lượng. Không chạy lại AI cho frame lặp.
-- Phiên reader đổi hoặc khoảng trống so với output index vượt 2 giây: finalize phiên cũ, reset pipeline/model/tracker, tạo thư mục `camera_<processed>` mới.
-- `epoch` tăng sau khi reader mở nguồn; timeout đọc/mở và reconnect cấu hình được. Khi chưa có frame mới, vòng chính vẫn có thể đang chờ `read()`; đóng phiên xảy ra khi nhận item tiếp theo hoặc dừng, không có watchdog độc lập ngay tại giây thứ 2.
+- Khi nguồn chậm/AI chậm: clip CFR có frame lặp, nhưng `observed=False` không chạy lại AI, không tạo event, không cộng thời gian ảnh minh chứng.
+- `pause_gap_seconds=1.0`: mất frame lâu hơn mốc này hoặc reconnect ngắn thì PAUSE; giữ lịch sử/ID, không cộng khoảng mất nguồn vào đồng hồ bằng chứng. `reset_gap_seconds=10.0`: quá mốc này thì finalize phiên cũ/reset trạng thái; giữ Detector và MobileNet/classifier.
+- Reader polling khoảng 0.5 giây để vòng chính kiểm tra mất nguồn ngay cả khi chưa có frame mới; bỏ item quá cũ theo pause threshold. Sau khởi tạo/reset phiên lấy frame mới nhất thay vì xử lý frame đã giữ trong lúc chờ.
+- Frame trở lại sau PAUSE buộc detect; ghép được ID cũ thì RESUME. ID cũ chưa ghép không được dùng như quan sát mới. Không ghép được hoặc scene cut thì reset tracking/grouping/cache hành vi/lịch cảnh báo và ghi `[RESET]` kèm lý do. Log có `[PAUSE]` và `[RESUME]`.
+- Tracking/grouping/behavior dùng đồng hồ quan sát đã trừ gap. Alert nhận đồng hồ quan sát riêng cho confirmation/rearm, còn event/clip vẫn theo timeline media. Cache hành vi vẫn giữ qua PAUSE, buộc đủ điều kiện detection mới để phân loại lại lúc tiếp tục.
+- `epoch` tăng khi reader mở lại nguồn; đổi epoch không tự reset toàn bộ như trước. `timeout_ms` và `reconnect_seconds` độc lập với hai mức gap.
+- FPS nguồn khai báo từ `CAP_PROP_FPS`, FPS nhận từ cửa sổ thời điểm nhận trước queue bỏ cũ. Đây không phải capture PTS; FPS khai báo có thể sai, FPS nhận về 0 nếu hơn 2 giây không nhận frame.
 - Nếu độ phân giải thay đổi giữa một clip đang mở, writer hiện không tự đổi kích thước và có thể báo lỗi; không có nhánh tự reset theo resolution.
 
 ## 6. Module `detection`
@@ -379,7 +385,7 @@ Mốc 0.85 hiện viết trong `engine.py`, không nằm trong YAML. Các tên h
 
 | File | Input | Output |
 |---|---|---|
-| `manager.py` — `AlertManager` | Frame **đã viz**, frame index, FPS, groups có behaviors, scene cut | Clip, ảnh, report/metadata; callback khi từng gói hoàn tất |
+| `manager.py` — `AlertManager` | Frame **đã viz**, frame index, FPS, groups, scene cut; tùy chọn observed/observation_time/observation_seconds | Clip, ảnh, report/metadata; callback khi từng gói hoàn tất |
 | `uploader.py` — `AlertDelivery` | Folder + report gói đã hoàn tất, backend config, key môi trường | Ready BE hoặc giữ local/lỗi, thống kê delivery |
 | `__init__.py` | — | Package |
 
@@ -422,7 +428,7 @@ flowchart TD
 
 Mỗi frame lưu metadata: group ID, tuple track thành viên, tên behavior và AABB nhóm.
 
-1. Trong cửa sổ package, cộng `1/fps` cho mỗi frame có từng hành vi.
+1. Trong cửa sổ package, chỉ cộng thời lượng của quan sát thật có hành vi. Video test mặc định `1/fps`; runner truyền `observation_seconds` từ đồng hồ quan sát. Frame lặp không có sample bằng chứng.
 2. Chỉ nhận hành vi có tổng thời gian ≥ `evidence_min_seconds=1.5`; tổng có thể gồm nhiều đoạn rời nhau.
 3. Mỗi nhóm, xét các frame có ít nhất một hành vi đủ ngưỡng, chia thành các đoạn liên tục có **cùng tuple track IDs**.
 4. Chọn đoạn dài nhất; bằng thời gian ưu tiên tổ hợp nhiều thành viên hơn; lấy frame giữa theo chỉ số thấp hơn.
@@ -522,7 +528,7 @@ Mặc định server dùng FFmpeg trong `.tools/nvenc/bin/ffmpeg`, local OpenCV.
 | `grouping.yaml` | Khoảng cách cụm/ghế/người, dwell, đứng yên, grace |
 | `behavior.yaml` | MobileNet weights/metadata, threshold/margin/crop/cache |
 | `alerts.yaml` | Pre/post, confirmation/rearm, confirmed requirement, evidence minimum |
-| `stream.yaml` | RTMP/HLS, tên biến nguồn, output_fps, timeout/reconnect |
+| `stream.yaml` | RTMP/HLS, output_fps, PAUSE/RESET, timeout/reconnect, publish viz |
 | `backend.yaml` | Bật upload, API URL, tên biến key, GPS/camera/model version |
 
 Hai file detection server **không đồng bộ tự động**. Sửa `detect_fps` trong file nào thì phải truyền đúng `--config` file đó. `null` → mọi frame được xử lý; `2` → hai lượt/giây video nguồn; đây không phải FPS máy xử lý và không quyết định FPS clip file.
@@ -539,13 +545,15 @@ Thông tin xác thực để trong `.env`/environment, không chép key vào tà
 | `test/test_grouping.py` | Unit đứng yên/quan hệ/giữ group ID/biển; video grouping |
 | `test/test_behavior.py` | Unit rule text, MobileNet giả lập, ngưỡng 0.85 và preprocessing; video viz nhóm/hành vi |
 | `test/test_alert.py` | Unit chống lặp, clip biên/overlap, ảnh/ngưỡng 1.5 giây, chỉ nén ảnh chọn; video wrapper bật alerts + group_ids |
+| `test/test_stream_reconnect.py` | Giả lập giữ model/classifier qua reset, đồng hồ quan sát trừ gap, frame lặp không tạo cảnh báo/minh chứng, bỏ frame cũ |
+| `test/test_publish.py` | Queue publish bỏ cũ, lệnh encode và shutdown; không gọi mạng |
 | `test/test_pipeline.py` | Callback realtime, không phát trùng, rounding frame, BE giả lập/giữ file lỗi, stream URL; không gọi BE thật |
 | `test/test_detection_nms.py` | Unit NMS/IoS detection |
 | `test/test_obb_rules.py` | Polygon lỗi/suy biến, cost OpenCV vs công thức cũ, cache N+M, loại cặp xa, ID đổi góc, bù camera, đứng yên/grouping |
 | `scripts/export_tensorrt.py` | `--model`, `--imgsz`; export YOLO detect/OBB FP16, batch 1, static, workspace 4, nms=False, GPU 0 |
 | `scripts/benchmark_parallel.py` | Công cụ cũ so tuần tự/song song nhiều engine detect; yêu cầu ≥2 model, không dùng cho pipeline OBB một model |
 
-Một số assertion màu trong test cũ có thể cần cập nhật nếu renderer đã đổi từ đỏ sang vàng; không coi unit coverage là kiểm chứng chất lượng model trên dữ liệu thực.
+Unit test màu đã cập nhật theo renderer vàng; không coi unit coverage là kiểm chứng chất lượng model trên dữ liệu thực.
 
 ### Chạy chính
 
@@ -631,14 +639,14 @@ Tracking đã bỏ Shapely trong cost OBB, nhưng camera flow vẫn chạy theo 
 ## 16. Giới hạn cần biết khi phát triển tiếp
 
 1. Stream dùng timestamp nhận server, không dùng camera PTS; frame đến theo đợt/mạng chập chờn ảnh hưởng chuyển động/dwell.
-2. Frame lặp CFR được đưa lại metadata hành vi vào manager, nên có thể cộng thời gian hành vi dù không có quan sát mới. Chưa tách thời gian hiển thị clip khỏi thời gian bằng chứng thật.
+2. Frame lặp đã tách khỏi bằng chứng. Tuy nhiên phép tích lũy giữa các frame thật bình thường vẫn dùng khoảng quan sát; không chứng minh hành vi xảy ra liên tục trong mọi thời điểm giữa hai frame.
 3. Không có re-identification lâu dài, pose hay nhận dạng tài xế; điều kiện chân người/vùng trên xe là heuristic trục ảnh.
 4. Không kiểm chứng vỉa hè/vùng cấm; cảnh báo là kết quả mô hình/rule, dù text đã bỏ “nghi vấn”.
 5. Polygon track qua prediction là xấp xỉ affine + scale, không có bộ lọc góc riêng. OBB model dự đoán gần thẳng thì viz cũng gần thẳng.
 6. Upload không có reconcile/abort/replay tự động; cần giữ file lỗi và tránh tạo upload trùng khi outcome chưa chắc chắn.
 7. Clip/ảnh mất audio; ảnh trích từ clip có nén H.264. Tắt clip thì vẫn nén JPEG mỗi frame có hành vi.
 8. Cấu hình `enabled` tracking/grouping chỉ được runner test dùng để bỏ module; runner thật hiện khởi tạo hai module trực tiếp.
-9. Long-running stream có thể mở lại model sau reconnect; chưa có supervisor nhiều camera hay dịch vụ HTTP quản lý job.
+9. Model/classifier giữ qua PAUSE/reconnect/RESET; chỉ state phiên đổi. Chưa có supervisor nhiều camera hay dịch vụ HTTP quản lý job.
 10. Unit test kiểm tra logic/hình học, không thay thế đo độ chính xác, ID-switch và hiệu năng trên cùng video/cấu hình/tải server.
 
 ## 17. Vị trí sửa theo nhu cầu
@@ -659,3 +667,14 @@ Tracking đã bỏ Shapely trong cost OBB, nhưng camera flow vẫn chạy theo 
 | Nguồn stream/reconnect | `src/pipeline/stream.py`, `configs/stream.yaml` |
 | Scheduling stream/video | `src/pipeline/runner.py` |
 | Payload/luồng gửi BE | `src/alerts/uploader.py`, `configs/backend.yaml`, `.env` |
+
+
+## 18. Bổ sung phát viz trực tiếp
+
+`src/pipeline/publish.py` nhận frame BGR đã viz, xuất RTMP qua FFmpeg ở worker riêng. Bật bằng `run_stream.py --publish`, tắt bằng `--no-publish`. Cấu hình `stream.yaml.publish`, biến `UAV_VIZ_URL` ghi đè đích. URL mặc định riêng `live/stream_ai_obb`, auth kế thừa query RTMP nguồn khi chưa có query ở đích.
+
+Queue 2 frame, đầy bỏ cũ, không chặn cảnh báo; phát đều theo publish FPS, lặp frame mới nhất nếu thiếu, sau 2 giây không có viz mới thì ngắt encoder/chờ. Tự retry lỗi. Không đổi luồng ghi bằng chứng. `summary.json.publish` có số submitted, sent_to_encoder, dropped, failures; sending không đảm bảo viewer nhận được.
+
+Publisher dùng FFmpeg bundled/libx264 ultrafast (2 threads), độc lập FFmpeg NVENC ghi MP4 vì build NVENC hiện tại không có FLV. Nếu muốn NVENC live phải cung cấp binary có cả NVENC/FLV qua publish.ffmpeg và publish.encoder. `test/test_publish.py` kiểm tra queue/lệnh/shutdown không truy cập mạng.
+
+Log stream bổ sung `FPS xử lý (5s)`: số frame thực xử lý xong trong 5 giây gần nhất / 5. Không đếm frame lặp để ghi/phát video. `FPS xử lý TB` vẫn là trung bình từ lúc bắt đầu vòng stream; khi tạm mất nguồn, cửa sổ 5 giây giảm về 0 dù trung bình tích luỹ còn cao.

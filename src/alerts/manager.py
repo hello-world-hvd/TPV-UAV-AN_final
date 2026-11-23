@@ -40,20 +40,21 @@ class AlertManager:
         self.video_stats = []
         self.timings = dict(open_encoder=0., enqueue_video=0., close_encoder=0., evidence=0.)
 
-    def update(self, frame, frame_index, fps, groups, scene_cut=False):
+    def update(self, frame, frame_index, fps, groups, scene_cut=False, observed=True, observation_time=None, observation_seconds=None):
         if frame_index <= self.previous_frame:
             raise ValueError('Frame cảnh báo phải tăng liên tục.')
         self.previous_frame = frame_index
         timestamp = frame_index / fps
+        evidence_time = timestamp if observation_time is None else observation_time
         if scene_cut:
             self.states.clear()
             self.pending.clear()
         self.states = {key: last for key, last in self.states.items()
-                       if timestamp - last <= self.config['rearm_seconds']}
+                       if evidence_time - last <= self.config['rearm_seconds']}
         # Clip đã giữ nguyên frame viz: chỉ lưu metadata để chọn ảnh khi đóng clip.
         # Khi tắt clip, vẫn giữ JPEG để chế độ chỉ ảnh hoạt động độc lập.
         samples = {}
-        visible = [group for group in groups if group.get('behaviors')]
+        visible = [group for group in groups if observed and group.get('behaviors')]
         image = None
         if visible and not self.save_video:
             ok, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
@@ -62,7 +63,8 @@ class AlertManager:
             image = jpeg.tobytes()
         for group in visible:
             samples[group['group_id']] = dict(signature=tuple(sorted(group['track_ids'])),
-                behaviors=tuple(b['name'] for b in group['behaviors']), jpeg=image,
+                behaviors=tuple(b['name'] for b in group['behaviors']),
+                seconds=1/fps if observation_seconds is None else observation_seconds, jpeg=image,
                 bbox=list(group.get('bbox_xyxy', [0, 0, frame.shape[1], frame.shape[0]])))
         self.history.append((frame_index, timestamp, samples))
         if self.save_video:
@@ -70,20 +72,21 @@ class AlertManager:
             first_frame = math.ceil((timestamp - self.config['pre_seconds']) * fps - 1e-7)
             while self.frames and self.frames[0][0] < first_frame:
                 self.frames.popleft()
-        observed = set()
-        for group in groups:
+        observed_frame = observed
+        observed_keys = set()
+        for group in (groups if observed_frame else []):
             if self.config['require_confirmed_group'] and group['status'] != 'confirmed':
                 continue
             for behavior in group.get('behaviors', []):
                 key = (group['group_id'], behavior['name'])
-                if key in observed:
+                if key in observed_keys:
                     continue
-                observed.add(key)
-                first = self.pending.setdefault(key, timestamp)
-                if timestamp - first + 1e-8 < self.config['confirmation_seconds']:
+                observed_keys.add(key)
+                first = self.pending.setdefault(key, evidence_time)
+                if evidence_time - first + 1e-8 < self.config['confirmation_seconds']:
                     continue
                 previous = self.states.get(key)
-                self.states[key] = timestamp
+                self.states[key] = evidence_time
                 if previous is not None:
                     continue
                 self.event_count += 1
@@ -121,7 +124,8 @@ class AlertManager:
                                 self._write_video(writer, buffered)
                                 package['video_frames'] += 1
                         package['last_video_frame'] = frame_index
-        self.pending = {key: value for key, value in self.pending.items() if key in observed}
+        if observed_frame:
+            self.pending = {key: value for key, value in self.pending.items() if key in observed_keys}
         for package in self.packages:
             if 'evidence' in package:
                 continue
@@ -184,7 +188,7 @@ class AlertManager:
             durations = {}
             for _, _, samples in package['samples']:
                 for name in samples.get(gid, {}).get('behaviors', ()):
-                    durations[name] = durations.get(name, 0.) + 1/fps
+                    durations[name] = durations.get(name, 0.) + samples[gid].get('seconds', 1/fps)
             accepted = {name for name, seconds in durations.items()
                         if seconds + 1e-8 >= self.config['evidence_min_seconds']}
             if not accepted:

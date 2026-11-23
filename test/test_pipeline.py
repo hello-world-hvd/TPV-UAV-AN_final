@@ -30,11 +30,11 @@ def main():
         path.write_text(yaml.safe_dump(config))
         reports = []
         manager = AlertManager(root, path, False, on_package=lambda folder, report: reports.append((folder, report)))
-        group = dict(group_id=1, track_ids=[1,2], status='confirmed', bbox_xyxy=[5,5,40,40],
+        group = dict(group_id=1, track_ids=[1,2], status='confirmed', bbox_xyxy=[5,50,40,85],
                      behaviors=[dict(name='kinh doanh', source='group_rule')])
         frame = draw_detections(np.zeros((100,400,3), np.uint8), [], load_font(), [group], True)
-        assert tuple(frame[5,5]) == (0,0,255)
-        assert frame[44:,:,2].max() > 0 and frame[44:,:,:2].max() == 0
+        assert tuple(frame[85,5]) == (0,255,255)
+        assert frame[:48,:,2].max() > 0 and frame[:,:,0].max() == 0
         for i in range(90):
             manager.update(frame, i, 10, [group])
         assert len(reports) == 1 and not manager.packages
