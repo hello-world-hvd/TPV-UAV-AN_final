@@ -1,10 +1,11 @@
 """Theo dõi từng ID bằng Kalman/Hungarian, bù camera và optical flow; chỉ detection xác nhận track."""
 
+import cv2
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
 from tracking.motion import CameraMotion, warp_box
-from core.geometry import polygon, shape, dimensions, transform as warp_polygon, attach_polygon
+from core.geometry import polygon, transform as warp_polygon, attach_polygon
 
 
 def measurement(box):
@@ -15,6 +16,20 @@ def measurement(box):
 def bbox(state):
     half = np.maximum(1, state[2:4]) / 2
     return np.r_[state[:2] - half, state[:2] + half]
+
+
+def _obb_geometry(points):
+    """Chuẩn hoá một lần mỗi đối tượng/frame; polygon hỏng dùng đường ghép AABB dự phòng."""
+    p = np.asarray(points, dtype=np.float64)
+    if p.shape != (4,2) or not np.isfinite(p).all():
+        return None
+    hull = cv2.convexHull(np.ascontiguousarray(np.round(p,3), dtype=np.float32)).reshape(-1,2)
+    area = cv2.contourArea(hull)
+    if len(hull) < 3 or area <= 1e-6:
+        return None
+    # Giữ cách đo tâm/cạnh cũ để không đổi điều kiện ghép.
+    size = np.sort([np.linalg.norm(p[1]-p[0]), np.linalg.norm(p[2]-p[1])])
+    return hull, area, p.mean(0), np.maximum(size,1), max(np.linalg.norm(size),1), hull.min(0), hull.max(0)
 
 
 def association_costs(tracks, detections, config):
@@ -33,19 +48,33 @@ def association_costs(tracks, detections, config):
     overlap = intersection / np.maximum(union, 1e-6)
     distance = np.linalg.norm(centers[None, :, :] - states[:, None, :2], axis=-1) / np.maximum(np.linalg.norm(states[:, 2:4], axis=-1), 1)[:, None]
     size_change = np.abs(np.log(sizes[None, :, :] / np.maximum(states[:, None, 2:4], 1))).max(-1)
+    # Cache O(N+M), không tạo hình học detection lại ở từng cặp track.
+    track_geometry = [_obb_geometry(t['polygon']) if 'polygon' in t else None for t in tracks]
+    detection_geometry = [_obb_geometry(d['bbox_polygon']) if 'bbox_polygon' in d else None for d in detections]
     for i, track in enumerate(tracks):
-        if 'polygon' not in track:
+        a = track_geometry[i]
+        if a is None:
             continue
-        predicted = {'bbox_polygon': track['polygon']}
-        a = shape(predicted)
         for j, row in enumerate(detections):
-            if 'bbox_polygon' not in row or track['label'] != row['label']:
+            b = detection_geometry[j]
+            if b is None or track['label'] != row['label']:
                 continue
-            b = shape(row)
-            overlap[i,j] = a.intersection(b).area / max(a.union(b).area, 1e-6)
-            size_a, size_b = np.sort(dimensions(predicted)), np.sort(dimensions(row))
-            size_change[i,j] = np.abs(np.log(np.maximum(size_b,1)/np.maximum(size_a,1))).max()
-            distance[i,j] = np.linalg.norm(polygon(row).mean(0)-polygon(predicted).mean(0))/max(np.linalg.norm(size_a),1)
+            size_change[i,j] = np.abs(np.log(b[3]/a[3])).max()
+            distance[i,j] = np.linalg.norm(b[2]-a[2])/a[4]
+            overlap[i,j] = 0.
+            if size_change[i,j] >= .8:
+                continue
+            # Không loại chỉ vì xa: rule cũ cho phép IoU đủ cao HOẶC tâm đủ gần.
+            # Chặn xa chỉ khi cận trên IoU cũng không thể đạt ngưỡng.
+            upper_intersection = min(a[1], b[1], float(np.maximum(0,np.minimum(a[6],b[6])-np.maximum(a[5],b[5])).prod()))
+            upper_iou = upper_intersection/max(a[1]+b[1]-upper_intersection,1e-6)
+            if distance[i,j] > config['max_center_distance'] and upper_iou < config['min_iou']:
+                continue
+            if upper_intersection <= 0:
+                continue
+            intersection_area = float(cv2.intersectConvexConvex(a[0], b[0])[0])
+            intersection_area = np.clip(intersection_area, 0., min(a[1],b[1]))
+            overlap[i,j] = intersection_area/max(a[1]+b[1]-intersection_area,1e-6)
     same_label = np.asarray([t["label"] for t in tracks])[:, None] == np.asarray([d["label"] for d in detections])[None, :]
     valid = same_label & (size_change < .8) & ((overlap >= config["min_iou"]) | (distance <= config["max_center_distance"]))
     costs[valid] = (1 - overlap + .2 * distance)[valid]

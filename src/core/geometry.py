@@ -1,7 +1,8 @@
 """Hình học dùng chung AABB/OBB: polygon, khoảng cách mép, giao diện tích, kích thước và biến đổi camera."""
 import cv2
 import numpy as np
-from shapely.geometry import Polygon
+from shapely import set_precision
+from shapely.geometry import MultiPoint, Polygon
 from shapely.ops import unary_union
 
 
@@ -13,7 +14,16 @@ def polygon(row):
 
 
 def shape(row):
-    return Polygon(polygon(row))
+    # Track dự đoán có thể bị ép rất mỏng hoặc sai thứ tự đỉnh sau bù camera.
+    # Bao lồi sắp lại đỉnh; lưới 0.001 pixel loại sai số topo, không làm đổi rule.
+    points = np.asarray(polygon(row), dtype=float).reshape(-1,2)
+    points = points[np.isfinite(points).all(axis=1)]
+    if len(points) < 3:
+        return Polygon()
+    geometry = MultiPoint(points).convex_hull
+    if geometry.geom_type != 'Polygon':
+        return Polygon()
+    return set_precision(geometry, grid_size=.001)
 
 
 def dimensions(row):

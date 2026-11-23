@@ -14,7 +14,7 @@ inference:                              # Tham số suy luận áp dụng cho c�
   merge_iou: 0.5                        # Loại box cùng nhãn nếu IoU > ngưỡng này sau khi gom kết quả model; giữ confidence cao hơn.
   merge_ios: 0.9                        # Loại box cùng nhãn nếu giao/diện tích box nhỏ >= ngưỡng; null để tắt; giữ confidence cao hơn.
   max_detections: 300                   # Số detection tối đa mỗi model mỗi ảnh; engine end-to-end còn bị giới hạn khi export.
-  detect_fps: 2                         # Số lượt detect mỗi giây video nguồn; null: mọi frame. Không phải FPS xử lý hay FPS output.
+  detect_fps: null                         # Số lượt detect mỗi giây video nguồn; null: mọi frame. Không phải FPS xử lý hay FPS output.
 
 # Ngưỡng riêng cho 13 nhãn; bỏ lớp Xe bán hàng rong ngoài danh sách.
 thresholds:                             # Ngưỡng confidence riêng từng nhãn, thuộc (0, 1]; tăng để lọc mạnh hơn, có thể bỏ sót.

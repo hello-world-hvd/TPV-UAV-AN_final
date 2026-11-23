@@ -16,12 +16,12 @@ def load_font(font_path=None):
     ]
     for path in candidates:
         if path and Path(path).is_file():
-            return ImageFont.truetype(str(path), 20)
+            return ImageFont.truetype(str(path), 30)
     raise FileNotFoundError("Không tìm thấy font Unicode. Truyền --font đường/dẫn/font.ttf")
 
 
 @lru_cache(maxsize=1024)
-def _label_patch(text, font, color=(0, 255, 0)):
+def _label_patch(text, font, color=(255, 255, 0)):
     """Tạo vùng chữ nền đen một lần cho mỗi nội dung/font, giới hạn cache 1024 mục."""
     left, top, right, bottom = font.getbbox(text)
     image = Image.new("RGB", (max(1, right - left + 4), max(1, bottom - top + 4)), (0, 0, 0))
@@ -51,9 +51,9 @@ def draw_detections(frame, detections, font, groups=(), group_ids_only=False):
             if info['reason'] in reasons:
                 text += f" | {reasons[info['reason']]}"
         if 'bbox_polygon' in row:
-            cv2.polylines(result, [np.rint(row['bbox_polygon']).astype(np.int32)], True, (0,255,0), 2)
+            cv2.polylines(result, [np.rint(row['bbox_polygon']).astype(np.int32)], True, (0,255,255), 3)
         else:
-            cv2.rectangle(result, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.rectangle(result, (x1, y1), (x2, y2), (0, 255, 255), 3)
         patch = _label_patch(text, font)
         x = max(0, min(x1, width - 1))
         y = max(0, min(y1 - patch.shape[0], height - 1))
@@ -63,7 +63,7 @@ def draw_detections(frame, detections, font, groups=(), group_ids_only=False):
     for group in groups:
         x1, y1, x2, y2 = (int(round(value)) for value in group['bbox_xyxy'])
         behaviors = group.get('behaviors', [])
-        color = (0,0,255) if behaviors else (255,180,0)
+        color = (0,255,255)  # BGR: bbox vàng cho object, nhóm và hành vi.
         if 'bbox_polygon' in group:
             cv2.polylines(result, [np.rint(group['bbox_polygon']).astype(np.int32)], True, color, 2)
         else:
@@ -74,8 +74,8 @@ def draw_detections(frame, detections, font, groups=(), group_ids_only=False):
             # Một bbox/nhóm: G khi chưa có hành vi; B khi đã gán cảnh báo hành vi.
             text = (f"B{group['group_id']} {description}" if behaviors
                     else f"G{group['group_id']}" + (": Người và Máy móc" if group['kind'] == 'Người và Máy móc' else ''))
-        patch = _label_patch(text, font, (255, 0, 0) if behaviors else (0, 255, 0))
-        x, y = max(0, min(x1, width - 1)), max(0, min(y2 + 2, max(0, height - patch.shape[0])))
+        patch = _label_patch(text, font)
+        x, y = max(0, min(x1, width - 1)), max(0, min(y1 - patch.shape[0] - 2, max(0, height - patch.shape[0])))
         h, w = min(patch.shape[0], height - y), min(patch.shape[1], width - x)
         result[y:y+h, x:x+w] = patch[:h, :w]
     return result

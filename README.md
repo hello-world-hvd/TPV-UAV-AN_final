@@ -407,3 +407,5 @@ Nhánh ver3OBB dùng model OBB mặc định ở cả detection.yaml và detecti
 Khoảng cách nhóm, biển–cây/cột và người–vật đo theo mép polygon. Biển nằm trong nhóm xét diện tích giao bao lồi polygon các đồ vật (ngưỡng 50%). Đứng yên dùng tâm/đường chéo OBB với lịch sử bù camera. Giới hạn bbox OBB dùng cạnh ngắn/dài chuẩn hoá theo kích thước ảnh và diện tích polygon; các ngưỡng cũ là mốc ban đầu cần kiểm tra thực tế. Điều kiện độ cao chân người/vùng trên xe rác vẫn là heuristic theo trục ảnh vì OBB không xác định hướng đầu/chân hay vị trí tài xế.
 
 Bbox nhóm/hành vi vẽ box xoay bao thành viên; crop MobileNet giữ AABB nhóm để không đổi phân phối ảnh đầu vào model đã fine-tune. Alert/BE và các rule hành vi giữ logic ver2. `test/test_obb_rules.py` kiểm tra hình học, giữ ID qua góc xoay, camera-motion, prediction và trạng thái đứng yên.
+
+Tài liệu chi tiết: [Kiến trúc tổng thể, logic và input/output từng module](docs/kien_truc_he_thong.md).
