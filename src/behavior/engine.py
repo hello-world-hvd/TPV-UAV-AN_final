@@ -91,8 +91,8 @@ class BehaviorEngine:
                     and scores[label] - scores[ranked[1]] >= self.config['min_margin'])
         group['activity_classification'] = {**result, 'class': label, 'accepted': accepted}
         if accepted:
-            # Chỉ gọi riêng hành vi khi confidence >0.85; còn lại giữ nhãn chung.
+            # Chỉ gọi riêng hành vi khi confidence >0.92; còn lại giữ nhãn chung.
             name = ({'repairing_vehicle': 'Sửa xe', 'washing_vehicle': 'Rửa xe'}[label]
-                    if scores[label] > .85 else 'Rửa xe / Sửa xe')
+                    if scores[label] > 1.0 else 'Rửa xe / Sửa xe')
             group['behaviors'].append(dict(name=name, source='mobilenetv3', confidence=scores[label],
                                           status='suspected', sampled_at=result['timestamp']))

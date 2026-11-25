@@ -114,7 +114,7 @@ class AlertPipeline:
         # Minh chứng chỉ vẽ B{id} + tên hành vi; không vẽ object/nhóm chưa có hành vi.
         groups = [g for g in groups if g.get('behaviors')]
         with self.measure('render'):
-            rendered = draw_detections(frame, [], self.font, groups, group_ids_only=True)
+            rendered = draw_detections(frame, [], self.font, groups, group_ids_only=True, tracks=tracks)
         # Stream bỏ frame cũ ở khâu đọc để không trễ dần. Clip CFR lặp viz gần nhất
         # ở các slot thiếu, giữ đúng thời lượng theo thời gian nguồn thay vì tốc độ AI.
         if self.publisher is not None:

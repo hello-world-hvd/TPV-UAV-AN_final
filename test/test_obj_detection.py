@@ -201,7 +201,7 @@ def main():
                             behavior.update(frame, tracks, groups, index / fps)
                     with stages.measure("render"):
                         rendered = draw_detections(frame, [] if args.visualization == 'group_ids' else tracks,
-                                                   font, groups, group_ids_only=args.visualization == 'group_ids')
+                                                   font, groups, group_ids_only=args.visualization == 'group_ids', tracks=tracks)
                     with stages.measure("encode_write"):
                         if writer is not None:
                             writer.write(rendered)

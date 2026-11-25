@@ -29,7 +29,7 @@ def _label_patch(text, font, color=(255, 255, 0)):
     return cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)
 
 
-def draw_detections(frame, detections, font, groups=(), group_ids_only=False):
+def draw_detections(frame, detections, font, groups=(), group_ids_only=False, tracks=()):
     # Chỉ sao chép frame BGR; không chuyển toàn ảnh sang RGB/PIL.
     result = frame.copy()
     height, width = result.shape[:2]
@@ -60,12 +60,18 @@ def draw_detections(frame, detections, font, groups=(), group_ids_only=False):
         patch_height = min(patch.shape[0], height - y)
         patch_width = min(patch.shape[1], width - x)
         result[y:y + patch_height, x:x + patch_width] = patch[:patch_height, :patch_width]
+    by_id = {r['track_id']: r for r in [*detections, *tracks] if 'track_id' in r}
     for group in groups:
-        x1, y1, x2, y2 = (int(round(value)) for value in group['bbox_xyxy'])
+        visual = group
+        if group['kind'] == 'biển treo trên cây hoặc cột ứng viên':
+            # Chỉ đổi vùng vẽ, giữ nguyên thành viên/rule và bbox logic của nhóm.
+            visual = next((by_id[tid] for tid in group['track_ids']
+                           if tid in by_id and by_id[tid]['label'] == 'Biển quảng cáo'), group)
+        x1, y1, x2, y2 = (int(round(value)) for value in visual['bbox_xyxy'])
         behaviors = group.get('behaviors', [])
         color = (0,255,255)  # BGR: bbox vàng cho object, nhóm và hành vi.
-        if 'bbox_polygon' in group:
-            cv2.polylines(result, [np.rint(group['bbox_polygon']).astype(np.int32)], True, color, 2)
+        if 'bbox_polygon' in visual:
+            cv2.polylines(result, [np.rint(visual['bbox_polygon']).astype(np.int32)], True, color, 2)
         else:
             cv2.rectangle(result, (x1,y1), (x2,y2), color, 2)
         description = '; '.join(r['name'] for r in behaviors) if behaviors else group['kind']

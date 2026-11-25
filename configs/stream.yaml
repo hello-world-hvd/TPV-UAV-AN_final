@@ -2,16 +2,17 @@
 input_env: UAV_STREAM_URL                 # Ưu tiên URL trong biến môi trường này nếu có.
 input: "rtmp://14.232.161.78/live/stream?user=cn01&pass=cn0101"
 hls: "http://14.232.161.78:8888/live/stream/" # Nguồn thay thế với --source hls.
-output_fps: 30                            # FPS clip cảnh báo; bù frame lặp khi xử lý chậm hơn nguồn.
-reconnect_seconds: 3                      # Chờ trước khi kết nối lại khi luồng mất tín hiệu.
-pause_gap_seconds: 1.0                    # Gián đoạn ngắn: giữ lịch sử, không cộng bằng chứng.
-reset_gap_seconds: 10.0                   # Reset track/group/alert khi gap frame thật vượt mốc này; giữ model đã nạp.
-timeout_ms: 5000                          # Timeout mở/đọc luồng, tránh treo vô hạn.
+output_fps: 15                            # FPS clip cảnh báo; bù frame lặp khi xử lý chậm hơn nguồn.
+reconnect_seconds: 5                      # Chờ trước khi kết nối lại khi luồng mất tín hiệu.
+timeout_ms: 15000                          # Timeout mở/đọc luồng, tránh treo vô hạn.
 
-# Phát video đã viz ra media server; đường riêng tránh đè luồng AI của dự án cũ.
+# Phát luồng viz riêng, không ghi đè stream_ai dự án cũ.
 publish:
-  enabled: false                         # Bật bằng --publish hoặc true; --no-publish để tắt.
-  url_env: UAV_VIZ_URL                    # URL đầy đủ có auth nếu khác nguồn; ưu tiên biến môi trường.
-  url: "rtmp://14.232.161.78/live/stream_ai_obb" # Khi không có query sẽ kế thừa auth từ nguồn RTMP.
-  fps: 15                                # Nhịp phát viz; lặp hình gần nhất nếu AI chậm, queue đầy bỏ cũ.
-  encoder: libx264                        # FFmpeg bundled hỗ trợ RTMP/FLV; độc lập encoder clip alert.
+  enabled: false
+  url_env: UAV_VIZ_URL
+  url: rtmp://14.232.161.78/live/stream_ai_obb
+  fps: 15
+
+reset_gap_seconds: 10.0
+
+pause_gap_seconds: 1.0

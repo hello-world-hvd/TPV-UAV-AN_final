@@ -2,6 +2,6 @@
 enabled: false                                      # true: gửi BE rồi xoá file tạm khi BE xác nhận ready.
 api_url: https://violation-api-gray.vercel.app       # API hiện đang dùng trong dong_workspace/UAV.
 api_key_env: TPV_UPLOAD_API_KEY                      # Tên biến môi trường chứa x-api-key.
-location: null                                      # GPS thực dạng "latitude, longitude"; bắt buộc khi bật upload.
+location: "20.963528986150052, 105.7707795028052"      # GPS thực dạng "latitude, longitude"; bắt buộc khi bật upload.
 camera_id: cn01                                     # Mã camera gửi BE.
 model_version: yolo26m-ver2                          # Phiên bản model/pipeline.
