@@ -1,5 +1,7 @@
 """Theo dõi từng ID bằng Kalman/Hungarian, bù camera và optical flow; chỉ detection xác nhận track."""
 
+from core.step_timing import StepTiming
+
 import cv2
 import numpy as np
 from scipy.optimize import linear_sum_assignment
@@ -83,6 +85,7 @@ def association_costs(tracks, detections, config):
 
 class Tracker:
     def __init__(self, config):
+        self.timings = StepTiming()
         self.config = config
         self.motion = CameraMotion(config["motion_max_side"], config["flow_refresh_interval"])
         self.tracks = []
@@ -97,58 +100,63 @@ class Tracker:
         self.previous_timestamp = timestamp
         boxes = {t["id"]: bbox(t["x"]) for t in self.tracks
                  if timestamp - t["last_seen"] <= self.config["max_prediction_seconds"]}
-        motion = self.motion.update(frame, boxes, foreground_flow=detections is None) if self.config["camera_motion"] else {
-            "scene_cut": False, "reliable": False, "local_boxes": {}}
+        with self.timings.measure('camera_motion'):
+            motion = self.motion.update(frame, boxes, foreground_flow=detections is None) if self.config["camera_motion"] else {
+                "scene_cut": False, "reliable": False, "local_boxes": {}}
         self.last_motion = motion
         if motion["scene_cut"]:
             self.tracks.clear()
         self.tracks = [t for t in self.tracks if timestamp - t["last_seen"] <= self.config["max_lost_seconds"]]
-        for t in self.tracks:
-            previous_box = bbox(t["x"]).copy()
-            t["source"] = "prediction"
-            if motion["reliable"]:
-                matrix = motion["matrix"]
-                if "polygon" in t:
-                    t["polygon"] = warp_polygon(t["polygon"], matrix)
-                previous_box = warp_box(previous_box, matrix)
-                t["x"][:4] = measurement(warp_box(bbox(t["x"]), matrix))
-                scale = np.hypot(matrix[0, 0], matrix[1, 0])
-                transform = np.eye(8)
-                transform[:2, :2] = transform[4:6, 4:6] = matrix[:, :2]
-                transform[2, 2] = transform[3, 3] = transform[6, 6] = transform[7, 7] = scale
-                t["x"][4:] = transform[4:, 4:] @ t["x"][4:]
-                t["p"] = transform @ t["p"] @ transform.T
-                t["source"] = "camera_motion"
-            anchor = t["x"][:4].copy()
-            transition = np.eye(8)
-            transition[:4, 4:] = np.eye(4) * dt
-            t["x"] = transition @ t["x"]
-            t["p"] = transition @ t["p"] @ transition.T + np.eye(8) * max(dt, .001) * 4
-            if t["id"] in motion["local_boxes"]:
-                observed = measurement(motion["local_boxes"][t["id"]])
-                if dt > 0:
-                    t["x"][4:6] = .5 * t["x"][4:6] + .5 * (observed[:2] - anchor[:2]) / dt
-                t["x"][:4] = observed
-                t["source"] = "optical_flow"
-            if 'polygon' in t:
-                # Giữ góc detection gần nhất; bù camera trước rồi đưa polygon tới trạng thái dự đoán.
-                target = bbox(t['x'])
-                ratio = np.maximum(target[2:]-target[:2],1)/np.maximum(previous_box[2:]-previous_box[:2],1)
-                t['polygon'] = (t['polygon']-(previous_box[:2]+previous_box[2:])/2)*ratio + (target[:2]+target[2:])/2
+        with self.timings.measure('kalman_predict'):
+            for t in self.tracks:
+                previous_box = bbox(t["x"]).copy()
+                t["source"] = "prediction"
+                if motion["reliable"]:
+                    matrix = motion["matrix"]
+                    if "polygon" in t:
+                        t["polygon"] = warp_polygon(t["polygon"], matrix)
+                    previous_box = warp_box(previous_box, matrix)
+                    t["x"][:4] = measurement(warp_box(bbox(t["x"]), matrix))
+                    scale = np.hypot(matrix[0, 0], matrix[1, 0])
+                    transform = np.eye(8)
+                    transform[:2, :2] = transform[4:6, 4:6] = matrix[:, :2]
+                    transform[2, 2] = transform[3, 3] = transform[6, 6] = transform[7, 7] = scale
+                    t["x"][4:] = transform[4:, 4:] @ t["x"][4:]
+                    t["p"] = transform @ t["p"] @ transform.T
+                    t["source"] = "camera_motion"
+                anchor = t["x"][:4].copy()
+                transition = np.eye(8)
+                transition[:4, 4:] = np.eye(4) * dt
+                t["x"] = transition @ t["x"]
+                t["p"] = transition @ t["p"] @ transition.T + np.eye(8) * max(dt, .001) * 4
+                if t["id"] in motion["local_boxes"]:
+                    observed = measurement(motion["local_boxes"][t["id"]])
+                    if dt > 0:
+                        t["x"][4:6] = .5 * t["x"][4:6] + .5 * (observed[:2] - anchor[:2]) / dt
+                    t["x"][:4] = observed
+                    t["source"] = "optical_flow"
+                if 'polygon' in t:
+                    # Giữ góc detection gần nhất; bù camera trước rồi đưa polygon tới trạng thái dự đoán.
+                    target = bbox(t['x'])
+                    ratio = np.maximum(target[2:]-target[:2],1)/np.maximum(previous_box[2:]-previous_box[:2],1)
+                    t['polygon'] = (t['polygon']-(previous_box[:2]+previous_box[2:])/2)*ratio + (target[:2]+target[2:])/2
         if detections is not None:
-            costs = association_costs(self.tracks, detections, self.config)
+            with self.timings.measure('association_costs'):
+                costs = association_costs(self.tracks, detections, self.config)
             matched_tracks, matched_detections = set(), set()
             if costs.size:
-                rows, cols = linear_sum_assignment(costs)
+                with self.timings.measure('hungarian'):
+                    rows, cols = linear_sum_assignment(costs)
                 for i, j in zip(rows, cols):
                     if costs[i, j] >= 1e5:
                         continue
                     t, row = self.tracks[i], detections[j]
-                    gain = np.linalg.solve(t["p"][:4, :4] + np.eye(4) * 4, t["p"][:4, :]).T
-                    t["x"] += gain @ (measurement(row["bbox_xyxy"]) - t["x"][:4])
-                    residual = np.eye(8)
-                    residual[:, :4] -= gain
-                    t["p"] = residual @ t["p"] @ residual.T + 4 * gain @ gain.T
+                    with self.timings.measure('kalman_correct'):
+                        gain = np.linalg.solve(t["p"][:4, :4] + np.eye(4) * 4, t["p"][:4, :]).T
+                        t["x"] += gain @ (measurement(row["bbox_xyxy"]) - t["x"][:4])
+                        residual = np.eye(8)
+                        residual[:, :4] -= gain
+                        t["p"] = residual @ t["p"] @ residual.T + 4 * gain @ gain.T
                     t["observed_bbox"] = list(row["bbox_xyxy"])
                     if 'bbox_polygon' in row:
                         t['polygon'] = polygon(row).copy()
@@ -171,19 +179,20 @@ class Tracker:
                     self.tracks[-1]['polygon'] = polygon(row).copy()
                     self.tracks[-1]['observed_polygon'] = polygon(row).tolist()
                 self.next_id += 1
-        output = []
-        height, width = frame.shape[:2]
-        for t in self.tracks:
-            age = timestamp - t["last_seen"]
-            if not t["confirmed"] or age > self.config["max_prediction_seconds"]:
-                continue
-            box = np.clip(bbox(t["x"]), [0, 0, 0, 0], [width, height, width, height])
-            if np.any(box[2:] <= box[:2]) or not np.isfinite(box).all():
-                continue
-            output.append({"track_id": t["id"], "label": t["label"], "confidence": t["confidence"],
-                           "bbox_xyxy": box.tolist(), "position_source": t["source"], "detection_age_seconds": age,
-                           "observed_bbox_xyxy": t["observed_bbox"]})
-            if 'polygon' in t:
-                attach_polygon(output[-1], t['polygon'])
-                output[-1]['observed_bbox_polygon'] = t['observed_polygon']
+        with self.timings.measure('output_geometry'):
+            output = []
+            height, width = frame.shape[:2]
+            for t in self.tracks:
+                age = timestamp - t["last_seen"]
+                if not t["confirmed"] or age > self.config["max_prediction_seconds"]:
+                    continue
+                box = np.clip(bbox(t["x"]), [0, 0, 0, 0], [width, height, width, height])
+                if np.any(box[2:] <= box[:2]) or not np.isfinite(box).all():
+                    continue
+                output.append({"track_id": t["id"], "label": t["label"], "confidence": t["confidence"],
+                               "bbox_xyxy": box.tolist(), "position_source": t["source"], "detection_age_seconds": age,
+                               "observed_bbox_xyxy": t["observed_bbox"]})
+                if 'polygon' in t:
+                    attach_polygon(output[-1], t['polygon'])
+                    output[-1]['observed_bbox_polygon'] = t['observed_polygon']
         return output

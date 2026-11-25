@@ -261,6 +261,12 @@ def main():
             stats['alert_encoder_workers'] = alerts.video_stats
             stats['alert_stages'] = alerts.timings
             print(f'Chi tiết alert (giây): {alerts.timings}')
+        for name, module in (('tracking', tracker), ('grouping', grouper)):
+            if module is not None:
+                stats[f'{name}_details'] = module.timings.summary()
+                module.timings.show(f'Chi tiết {name}')
+        if grouper is not None:
+            print('grouping.geometry nằm trong các bước grouping khác; không cộng lặp vào tổng.')
         stats["video_encoder"] = config["output"]["video"]
         if isinstance(writer, ThreadedWriter):
             stats["encoder_worker"] = {"write_seconds": writer.write_seconds,

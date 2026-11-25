@@ -148,10 +148,13 @@ class AlertPipeline:
                 result = self.alerts.finalize(None, self.fps, self.index)
             for name, step in sorted(self.steps.items(), key=lambda item: -item[1]['seconds']):
                 print(f"{name:16s}: {step['seconds']:.3f}s | {step['seconds']*1000/step['calls']:.2f} ms/lượt", flush=True)
+            self.tracker.timings.show('Chi tiết tracking')
+            self.grouper.timings.show('Chi tiết grouping (geometry nằm trong các bước khác)')
             print(f'Chi tiết alert (giây): {self.alerts.timings}', flush=True)
             return dict(frames_processed=self.processed, output_frames=self.index,
                         elapsed_seconds=time.perf_counter()-self.started, events=result['event_count'],
-                        alerts=result['package_count'], detector=self.timer.summary(), stages=self.steps, alert_stages=self.alerts.timings)
+                        alerts=result['package_count'], detector=self.timer.summary(), stages=self.steps, alert_stages=self.alerts.timings,
+                        tracking_details=self.tracker.timings.summary(), grouping_details=self.grouper.timings.summary())
         finally:
             self.alerts.close()
             if close_models:
