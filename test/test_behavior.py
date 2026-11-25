@@ -38,7 +38,7 @@ def check_rules():
             factory.return_value.predict.return_value=[[.05,.05,.9]]
             engine.update(frame,tracks,groups,0)
             assert groups[1]['behaviors'][0]['name']=='Rửa xe'
-            assert len(groups[0]['behaviors'])==2
+            assert [b['name'] for b in groups[0]['behaviors']] == ['Đổ nước']
             assert groups[5]['behaviors'][0]['name']=='Sửa chữa máy móc'
             assert groups[2]['behaviors'][0]['name']=='Tập kết vật liệu xây dựng'
             assert groups[3]['behaviors'][0]['name']=='Đặt biển báo'

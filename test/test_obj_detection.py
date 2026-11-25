@@ -199,7 +199,7 @@ def main():
                             groups = grouper.update(tracks, index / fps, tracker.last_motion)
                     if behavior is not None:
                         with stages.measure('behavior'):
-                            behavior.update(frame, tracks, groups, index / fps)
+                            behavior.update(frame, tracks, groups, index / fps, tracker.last_motion)
                     with stages.measure("render"):
                         rendered = draw_detections(frame, [] if args.visualization == 'group_ids' else tracks,
                                                    font, groups, group_ids_only=args.visualization == 'group_ids', tracks=tracks)
@@ -267,6 +267,9 @@ def main():
                 module.timings.show(f'Chi tiết {name}')
         if grouper is not None:
             print('grouping.geometry nằm trong các bước grouping khác; không cộng lặp vào tổng.')
+        if behavior is not None and behavior.signs.model is not None:
+            stats['sidewalk_details'] = behavior.signs.model.timings.summary()
+            behavior.signs.model.timings.show('Chi tiết Mask2Former (nằm trong behavior)')
         stats["video_encoder"] = config["output"]["video"]
         if isinstance(writer, ThreadedWriter):
             stats["encoder_worker"] = {"write_seconds": writer.write_seconds,

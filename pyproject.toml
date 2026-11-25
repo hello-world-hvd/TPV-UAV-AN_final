@@ -17,5 +17,5 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["core", "core.*", "detection", "detection.*", "tracking", "tracking.*", "grouping", "grouping.*", "behavior", "behavior.*", "alerts", "alerts.*", "pipeline", "pipeline.*"]
+include = ["core", "core.*", "detection", "detection.*", "tracking", "tracking.*", "grouping", "grouping.*", "behavior", "behavior.*", "alerts", "alerts.*", "pipeline", "pipeline.*", "sidewalk", "sidewalk.*"]
 namespaces = false

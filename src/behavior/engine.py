@@ -5,6 +5,7 @@ import math
 import yaml
 
 from behavior.classifier import ActivityClassifier, CLASSES
+from sidewalk.signs import SignVerifier, SIGN_KINDS
 
 
 class BehaviorEngine:
@@ -29,10 +30,12 @@ class BehaviorEngine:
         self.device = device
         self.classifier = None
         self.cache = {}
+        self.signs = SignVerifier(Path(__file__).resolve().parents[2]/'configs/sidewalk.yaml')
 
-    def update(self, frame, tracks, groups, timestamp):
+    def update(self, frame, tracks, groups, timestamp, motion=None, resume=False):
         if not self.config['enabled']:
             return
+        sign_decisions = self.signs.update(frame,tracks,groups,timestamp,motion,resume)
         by_id = {r['track_id']: r for r in tracks}
         self.cache = {key: value for key, value in self.cache.items()
                       if timestamp - value['timestamp'] <= self.config['max_result_age_seconds']}
@@ -42,7 +45,9 @@ class BehaviorEngine:
             labels = {r['label'] for r in members}
             names = []
             if group['kind'] == 'đồ dùng và hàng hoá':
-                if not (len(members) == 1 and labels <= {'Ghế', 'Bàn', 'Xô'}):
+                # Xô + người chỉ là rule đổ nước; kinh doanh cần đồ kinh doanh riêng.
+                commercial = labels & {'Bàn', 'Ghế', 'Hàng hóa bày bán', 'Xe đẩy bán hàng'}
+                if commercial and not (len(members) == 1 and labels <= {'Ghế', 'Bàn'}):
                     names.append('Kinh doanh/Bán hàng')
                 if {'Xô', 'Người'} <= labels:
                     names.append('Đổ nước')
@@ -52,14 +57,13 @@ class BehaviorEngine:
                 names.append('Tập kết rác')
             elif group['kind'] == 'Vật liệu xây dựng':
                 names.append('Tập kết vật liệu xây dựng')
-            elif group['kind'] in ('Biển quảng cáo', 'biển treo trên cây hoặc cột ứng viên'):
-                names.append('Đặt biển báo')
+            elif group['kind'] in SIGN_KINDS:
+                if group['group_id'] in sign_decisions:
+                    names.append(sign_decisions[group['group_id']])
             elif 'Phương tiện thu gom, vận chuyển rác' in labels:
                 names.append('Tập kết rác')
             elif 'Vật liệu xây dựng' in labels:
                 names.append('Tập kết vật liệu xây dựng')
-            elif 'Biển quảng cáo' in labels:
-                names.append('Đặt biển báo')
             group['behaviors'] = [dict(name=name, source='group_rule', status='suspected',
                                        reason='Chỉ suy ra từ thành phần nhóm; chưa xác minh hành động/vị trí/quy định.') for name in names]
             if (group['kind'] == 'người và xe máy đứng yên' and group['status'] == 'confirmed'

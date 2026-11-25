@@ -1,0 +1,32 @@
+# Phân vùng vỉa hè độc lập bằng Mask2Former; chưa bật trong pipeline chính.
+model: facebook/mask2former-swin-large-mapillary-vistas-semantic
+cache_dir: ../.cache/huggingface  # Tính từ thư mục YAML; dùng lại model đã cache.
+local_files_only: true           # true: không tải model; false: cho phép tải lần đầu.
+device: auto                    # auto, cuda:0, mps hoặc cpu.
+precision: fp16                 # CUDA: fp16/bf16/fp32; CPU/MPS dùng fp32.
+max_side: 768                   # Cạnh dài ảnh suy luận; tăng để giữ chi tiết, đổi lại chạy chậm hơn.
+confidence: 0.55                # Xác suất nhóm cao nhất tối thiểu.
+margin: 0.12                    # Chênh lệch tối thiểu giữa hai nhóm dẫn đầu.
+max_entropy: 0.85               # Độ bất định tối đa; vượt ngưỡng đánh dấu chưa chắc chắn.
+min_area_pixels: 500            # Bỏ thành phần mask nhỏ hơn diện tích này ở ảnh gốc.
+min_area_ratio: 0.002           # Ngưỡng diện tích theo tỷ lệ ảnh; lấy max với min_area_pixels.
+close_kernel: 3                # Closing ellipse trên mask nhỏ; 0 tắt, số lẻ 3 làm mượt nhẹ.
+min_hole_pixels: 100            # Lấp lỗ nhỏ hơn ngưỡng ở ảnh gốc; giữ lỗ lớn, không nối qua vật che lớn.
+simplify_ratio: 0.003           # Sai số đơn giản hoá polygon theo chu vi; giữ topology và lỗ.
+runtime:                        # Giới hạn threads giống bài test detection chính.
+  cv_threads: 4                 # Threads OpenCV.
+  torch_threads: 2              # Threads CPU PyTorch.
+video:                          # Video viz giữ nguyên FPS và kích thước nguồn.
+  encoder: nvenc                # NVIDIA server; local dùng --encoder opencv.
+  preset: p1                    # Ưu tiên tốc độ.
+  cq: 20                        # Chất lượng NVENC; giảm số để tăng chất lượng.
+  async_encode: true            # Worker encode riêng, chờ ghi hết khi kết thúc.
+  queue_size: 2                 # Queue giới hạn; đầy thì chờ, không bỏ frame.
+  ffmpeg: ../.tools/nvenc/bin/ffmpeg # Đường dẫn tính từ YAML.
+signs:                          # Xác nhận vị trí biển trong pipeline; chỉ chạy model khi cần xét biển đặt.
+  segment_fps: 2                # Số lần phân vùng tối đa mỗi giây thời gian video/quan sát.
+  max_mask_age_seconds: 0.75     # Tuổi mask tối đa; giữa các lần AI phải warp bằng camera tin cậy.
+  confirm_seconds: 0.4          # Quan hệ liên tục đủ thời gian mới gán hành vi; ID vẫn theo nhóm.
+  contact_radius_ratio: 0.08    # Bán kính dải quanh cạnh dưới / đường chéo biển; bù vùng bị biển che.
+  min_contact_ratio: 0.2        # Tỷ lệ pixel vỉa hè tối thiểu trong dải chân biển.
+  hanging_gap_ratio: 0.03       # Khoảng hở biển–cây/cột tối đa / đường chéo biển; chặt hơn ứng viên grouping.

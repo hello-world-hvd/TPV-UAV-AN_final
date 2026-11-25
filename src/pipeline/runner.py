@@ -43,6 +43,7 @@ class AlertPipeline:
         self.grouper = Grouper(yaml.safe_load((ROOT/'configs/grouping.yaml').read_text()))
         self.behavior = models[1] if models else BehaviorEngine(ROOT/'configs/behavior.yaml', config['inference']['device'])
         self.behavior.cache.clear()
+        self.behavior.signs.reset()
         self.font = load_font(config['output']['font'])
         self.alerts = AlertManager(output, alert_config, True, config['output']['video'], delivery.submit)
         self.last_slot = -1
@@ -110,7 +111,7 @@ class AlertPipeline:
         with self.measure('grouping'):
             groups = self.grouper.update(tracks, timestamp, self.tracker.last_motion)
         with self.measure('behavior'):
-            self.behavior.update(frame, tracks, groups, timestamp)
+            self.behavior.update(frame, tracks, groups, timestamp, self.tracker.last_motion, resume)
         # Minh chứng chỉ vẽ B{id} + tên hành vi; không vẽ object/nhóm chưa có hành vi.
         groups = [g for g in groups if g.get('behaviors')]
         with self.measure('render'):
@@ -150,6 +151,8 @@ class AlertPipeline:
                 print(f"{name:16s}: {step['seconds']:.3f}s | {step['seconds']*1000/step['calls']:.2f} ms/lượt", flush=True)
             self.tracker.timings.show('Chi tiết tracking')
             self.grouper.timings.show('Chi tiết grouping (geometry nằm trong các bước khác)')
+            if self.behavior.signs.model is not None:
+                self.behavior.signs.model.timings.show('Chi tiết Mask2Former (nằm trong behavior)')
             print(f'Chi tiết alert (giây): {self.alerts.timings}', flush=True)
             return dict(frames_processed=self.processed, output_frames=self.index,
                         elapsed_seconds=time.perf_counter()-self.started, events=result['event_count'],

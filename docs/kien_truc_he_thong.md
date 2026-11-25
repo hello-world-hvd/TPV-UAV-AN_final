@@ -678,3 +678,12 @@ Queue 2 frame, đầy bỏ cũ, không chặn cảnh báo; phát đều theo pub
 Publisher dùng FFmpeg bundled/libx264 ultrafast (2 threads), độc lập FFmpeg NVENC ghi MP4 vì build NVENC hiện tại không có FLV. Nếu muốn NVENC live phải cung cấp binary có cả NVENC/FLV qua publish.ffmpeg và publish.encoder. `test/test_publish.py` kiểm tra queue/lệnh/shutdown không truy cập mạng.
 
 Log stream bổ sung `FPS xử lý (5s)`: số frame thực xử lý xong trong 5 giây gần nhất / 5. Không đếm frame lặp để ghi/phát video. `FPS xử lý TB` vẫn là trung bình từ lúc bắt đầu vòng stream; khi tạm mất nguồn, cửa sổ 5 giây giảm về 0 dù trung bình tích luỹ còn cao.
+
+
+### Xác nhận biển treo và biển đặt
+
+`src/sidewalk/signs.py` được `BehaviorEngine` gọi sau grouping. Nhóm biển cây/cột được xét treo trước: biển sát giá đỡ, cao hơn chân giá đỡ, quan sát còn mới và duy trì `signs.confirm_seconds` mới nhận “Treo biển báo”. Đây là quan hệ hình học ứng viên, không chứng minh vật lý cách gắn biển.
+
+Biển riêng không đạt treo được Mask2Former kiểm tra dải quanh cạnh dưới OBB. Đủ pixel nhãn vỉa hè thì nhận “Đặt biển báo” sau thời gian xác nhận; ngoài vỉa hè hoặc unknown không phát hành vi. Biển nằm trong nhóm hàng hoá vẫn theo rule kinh doanh, không phát thêm hành vi biển riêng.
+
+Model nạp lười một lần, dùng chung mask cho các biển, lịch mặc định 2 lượt/giây quan sát. Mask warp theo affine camera tin cậy; unreliable/đổi kích thước thì bỏ mask cũ và chờ lịch suy luận kế. Scene cut/resume/reset xoá mask và lịch xác nhận, giữ model. Thời gian segmentation nằm trong bước behavior; test in thêm chi tiết model. Các tham số tại `configs/sidewalk.yaml → signs`. Visualization biển cây/cột vẫn chỉ bao biển, giữ ID nhóm và thành viên cây/cột trong logic.
