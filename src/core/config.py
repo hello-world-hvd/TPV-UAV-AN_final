@@ -23,6 +23,14 @@ def load_config(path):
         value = Path(value).expanduser()
         return value.resolve() if value.is_absolute() else (path.parent / value).resolve()
 
+    runtime = config.setdefault('runtime', {})
+    if not isinstance(runtime, dict):
+        raise ValueError('runtime phải là mapping.')
+    for name, default in [('cv_threads', 4), ('torch_threads', 2)]:
+        runtime.setdefault(name, default)
+        if type(runtime[name]) is not int or runtime[name] < 1:
+            raise ValueError(f'runtime.{name} phải là số nguyên dương.')
+
     models = config.get("models")
     if not isinstance(models, list) or not models:
         raise ValueError("models phải là danh sách đường dẫn model không rỗng.")
@@ -114,3 +122,15 @@ def load_tracking_config(path):
     if config["max_prediction_seconds"] > config["max_lost_seconds"]:
         raise ValueError("max_prediction_seconds phải <= max_lost_seconds.")
     return config
+
+
+def apply_cpu_threads(config):
+    """Đặt một lần trước model/worker; không giới hạn tổng thread của chương trình hay CUDA/FFmpeg."""
+    import cv2
+    import torch
+    runtime = config['runtime']
+    cv2.setNumThreads(runtime['cv_threads'])
+    torch.set_num_threads(runtime['torch_threads'])
+    actual = dict(cv_threads=cv2.getNumThreads(), torch_threads=torch.get_num_threads())
+    print(f"CPU threads: OpenCV={actual['cv_threads']} | PyTorch={actual['torch_threads']}", flush=True)
+    return actual

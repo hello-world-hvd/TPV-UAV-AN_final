@@ -226,3 +226,8 @@ Runner thật ghi stage và `alert_stages` vào summary. FPS từng phiên tính
 Chưa có quản lý nhiều camera, HTTP job API, ReID dài hạn, pose hay phân vùng vỉa hè. Đổi độ phân giải giữa clip đang mở chưa tự reset. Dữ liệu nguồn/mạng và tải server ảnh hưởng độ chính xác/thời gian, cần so sánh trên cùng video và cấu hình.
 
 Log stream bổ sung `FPS xử lý (5s)`: số frame thực xử lý xong trong 5 giây gần nhất / 5. Không đếm frame lặp để ghi/phát video. `FPS xử lý TB` vẫn là trung bình từ lúc bắt đầu vòng stream; khi tạm mất nguồn, cửa sổ 5 giây giảm về 0 dù trung bình tích luỹ còn cao.
+
+
+### Thử giới hạn CPU threads
+
+Bốn detection YAML có `runtime.cv_threads: 4` và `runtime.torch_threads: 2`. Cả runner thật và runner test áp dụng một lần trước nạp model/worker, in giá trị hiệu lực. Điều chỉnh ở đúng file `--config`, khởi động lại để áp dụng. OpenCV có thể thử 1/2/4/8 trên cùng video; đây là mốc thử, không đảm bảo nhiều thread hơn sẽ nhanh hơn. Không đổi CUDA/TensorRT, FFmpeg, ONNX Runtime hay rule. `timing.json.cpu_threads` (test) và `summary.json.cpu_threads` (runner thật) ghi giá trị hiệu lực. Không dùng `torch.set_num_interop_threads` để tránh yêu cầu chỉ gọi một lần và ảnh hưởng tiến trình đã chạy.

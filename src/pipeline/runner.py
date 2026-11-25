@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 from alerts.manager import AlertManager
 from alerts.uploader import AlertDelivery
 from behavior.engine import BehaviorEngine
-from core.config import load_config, load_tracking_config
+from core.config import load_config, load_tracking_config, apply_cpu_threads
 from core.timing import DetectorTimer
 from detection.detector import Detector
 from detection.render import draw_detections, load_font
@@ -183,6 +183,7 @@ def main(mode):
     if started_at.tzinfo is None:
         parser.error('--recording-start cần múi giờ, ví dụ +07:00')
     config = load_config(args.config)
+    cpu_threads = apply_cpu_threads(config)
     output = args.output / datetime.now(ZoneInfo('Asia/Ho_Chi_Minh')).strftime('%Y%m%d_%H%M%S_%f')
     output.mkdir(parents=True)
     delivery = AlertDelivery(args.backend_config, started_at, args.upload)
@@ -296,5 +297,5 @@ def main(mode):
                     publisher.close()
             finally:
                 delivery.close()
-        (output/'summary.json').write_text(json.dumps(dict(sessions=results, delivery=delivery.counts, publish=publisher.stats if publisher else None), ensure_ascii=False, indent=2))
+        (output/'summary.json').write_text(json.dumps(dict(cpu_threads=cpu_threads, sessions=results, delivery=delivery.counts, publish=publisher.stats if publisher else None), ensure_ascii=False, indent=2))
     print(f'Hoàn tất: {output} | {delivery.counts}', flush=True)

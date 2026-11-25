@@ -24,7 +24,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from detection.detector import Detector
 from detection.render import draw_detections, load_font
-from core.config import load_config, load_tracking_config
+from core.config import load_config, load_tracking_config, apply_cpu_threads
 from tracking.tracker import Tracker
 from grouping.groups import Grouper
 from behavior.engine import BehaviorEngine
@@ -112,6 +112,7 @@ def main():
     elif not args.input.is_file():
         parser.error(f"Không tìm thấy video: {args.input}")
     config = load_config(args.config)
+    cpu_threads = apply_cpu_threads(config)
     args.output = args.output or config["output"]["directory"] / args.mode
     font = load_font(config["output"]["font"])
     model_started = time.perf_counter()
@@ -245,6 +246,7 @@ def main():
                 print(f"  {name:16s}: {step['seconds']:8.3f}s | {step['average_ms']:8.2f} ms/lượt"
                       f" | {step['wall_percent']:5.1f}% | {step['calls']} lượt")
     stats = timer.summary()
+    stats["cpu_threads"] = cpu_threads
     stats["model_load_seconds"] = model_load_seconds
     detector.close()
     stats['parallel_models'] = config['inference'].get('parallel_models', False)

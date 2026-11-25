@@ -5,6 +5,10 @@ task: obb
 models:                                 # Danh sách model chạy trên cùng ảnh; đường dẫn tương đối tính từ file YAML.
   - ../models/yolo26m_obb.engine
 
+runtime:                                # Số luồng tính CPU, áp dụng trước khi nạp model/khởi động worker.
+  cv_threads: 4                         # OpenCV: resize, optical flow và các phép hỗ trợ đa luồng.
+  torch_threads: 2                      # PyTorch CPU intra-op; không phải số luồng GPU hay FFmpeg.
+
 inference:                              # Tham số suy luận áp dụng cho các model.
   parallel_models: false                 # true: hai engine TensorRT 10+ kích thước cố định chạy trên CUDA stream riêng; false: tuần tự.
   device: "0"                           # Thiết bị: cpu, mps (GPU Apple), hoặc "0" (GPU CUDA đầu tiên).
