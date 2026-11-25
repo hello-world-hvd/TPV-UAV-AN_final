@@ -259,6 +259,8 @@ def main():
         stats['save_alert_video'] = args.save_alert_video
         if alerts is not None:
             stats['alert_encoder_workers'] = alerts.video_stats
+            stats['alert_stages'] = alerts.timings
+            print(f'Chi tiết alert (giây): {alerts.timings}')
         stats["video_encoder"] = config["output"]["video"]
         if isinstance(writer, ThreadedWriter):
             stats["encoder_worker"] = {"write_seconds": writer.write_seconds,

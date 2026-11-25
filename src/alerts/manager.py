@@ -8,6 +8,7 @@ from collections import deque
 
 import cv2
 from core.video_writer import open_writer
+from alerts.worker import EvidenceWorker
 import yaml
 
 
@@ -38,9 +39,18 @@ class AlertManager:
         self.video_config = {"encoder": "opencv", "preset": "p1", "cq": 20,
                              "queue_size": 2, **(video_config or {}), "async_encode": True}
         self.video_stats = []
-        self.timings = dict(open_encoder=0., enqueue_video=0., close_encoder=0., evidence=0.)
+        self.timings = dict(open_encoder=0., enqueue_video=0., close_encoder=0., evidence=0., buffer_copy=0., finish_enqueue=0.)
+        self.worker = None
+        self.reports = {}
+        self.closed = False
+        self.fps = None
 
     def update(self, frame, frame_index, fps, groups, scene_cut=False, observed=True, observation_time=None, observation_seconds=None):
+        if self.closed:
+            raise RuntimeError('Bộ cảnh báo đã đóng.')
+        if self.worker is not None:
+            self.worker.check()
+        self.fps = fps
         if frame_index <= self.previous_frame:
             raise ValueError('Frame cảnh báo phải tăng liên tục.')
         self.previous_frame = frame_index
@@ -68,7 +78,11 @@ class AlertManager:
                 bbox=list(group.get('bbox_xyxy', [0, 0, frame.shape[1], frame.shape[0]])))
         self.history.append((frame_index, timestamp, samples))
         if self.save_video:
-            self.frames.append((frame_index, frame.copy()))
+            started = time.perf_counter()
+            buffered_frame = frame.copy()
+            buffered_frame.setflags(write=False)
+            self.frames.append((frame_index, buffered_frame))
+            self.timings['buffer_copy'] += time.perf_counter()-started
             first_frame = math.ceil((timestamp - self.config['pre_seconds']) * fps - 1e-7)
             while self.frames and self.frames[0][0] < first_frame:
                 self.frames.popleft()
@@ -114,38 +128,31 @@ class AlertManager:
                         folder.mkdir(exist_ok=True)
                         height, width = frame.shape[:2]
                         started = time.perf_counter()
-                        writer = open_writer(folder / 'clip.mp4', fps, (width, height), self.video_config)
+                        pre_roll = [buffered for index, buffered in self.frames
+                                    if index >= package['start_frame']]
+                        writer = open_writer(folder / 'clip.mp4', fps, (width, height), self.video_config,
+                                             initial_frames=pre_roll, copy_frames=False)
                         self.timings['open_encoder'] += time.perf_counter()-started
                         self.writers[package['package_id']] = writer
-                        start = package['start_frame']
-                        package['video_frames'] = 0
-                        for index, buffered in self.frames:
-                            if index >= start:
-                                self._write_video(writer, buffered)
-                                package['video_frames'] += 1
+                        package['video_frames'] = len(pre_roll)
                         package['last_video_frame'] = frame_index
         if observed_frame:
             self.pending = {key: value for key, value in self.pending.items() if key in observed_keys}
         for package in self.packages:
-            if 'evidence' in package:
+            if package.get('submitted'):
                 continue
             if frame_index < package['stop_frame']:
                 writer = self.writers.get(package['package_id'])
                 if writer is not None and package['last_video_frame'] != frame_index:
-                    self._write_video(writer, frame)
+                    self._write_video(writer, buffered_frame)
                     package['video_frames'] += 1
                     package['last_video_frame'] = frame_index
                 if not package['samples'] or package['samples'][-1][0] != frame_index:
                     package['samples'].append(self.history[-1])
             else:
-                self._close_video(package['package_id'])
-                self._seal(package, fps)
-                if self.on_package is not None:
-                    report = self._report(package, fps, frame_index)
-                    self.on_package(self.output / f"alert_{package['package_id']:06d}", report)
-                    package['delivered'] = True
+                self._queue_finish(package, fps, frame_index)
         if self.on_package is not None:
-            self.packages = [p for p in self.packages if not p.get('delivered')]
+            self.packages = [p for p in self.packages if not p.get('submitted')]
             cutoff = min([p['start'] for p in self.packages] + [timestamp-self.config['pre_seconds']])
             self.events = [e for e in self.events if e['alert_time'] >= cutoff]
             self.video_stats = self.video_stats[-2:]
@@ -157,32 +164,76 @@ class AlertManager:
         writer.write(frame)
         self.timings['enqueue_video'] += time.perf_counter()-started
 
-    def _close_video(self, package_id):
-        writer = self.writers.pop(package_id, None)
-        if writer is not None:
-            started = time.perf_counter()
-            writer.release()
-            self.timings['close_encoder'] += time.perf_counter()-started
-            self.video_stats.append(dict(package_id=package_id,
-                frames_written=writer.frames_written, write_seconds=writer.write_seconds))
+    def _queue_finish(self, package, fps, frame_count):
+        # Job giữ riêng metadata/sự kiện; luồng chính được phép dọn lịch sử ngay sau đó.
+        detached = dict(package)
+        events = [dict(e) for e in self.events
+                  if package['start_frame'] <= e['alert_frame'] < package['stop_frame']]
+        writer = self.writers.get(package['package_id'])
+        def finish():
+            if writer is not None:
+                started = time.perf_counter()
+                try:
+                    writer.release()
+                finally:
+                    self.timings['close_encoder'] += time.perf_counter()-started
+                self.video_stats.append(dict(package_id=package['package_id'],
+                    frames_written=writer.frames_written, write_seconds=writer.write_seconds))
+            self._seal(detached, fps, events)
+            report = self._report(detached, fps, frame_count, events)
+            if self.on_package is None:
+                self.reports[package['package_id']] = report
+            else:
+                self.on_package(self.output / f"alert_{package['package_id']:06d}", report)
+        if self.worker is None:
+            self.worker = EvidenceWorker(pending_jobs=1)
+        started = time.perf_counter()
+        self.worker.submit(finish)
+        self.timings['finish_enqueue'] += time.perf_counter()-started
+        self.writers.pop(package['package_id'], None)
+        package['submitted'] = True
+        del package['samples']
+
+    def wait_completed(self):
+        """Chờ các clip đã đủ cửa sổ; không đóng clip còn đang nhận frame."""
+        if self.worker is not None:
+            self.worker.wait()
 
     def close(self):
-        """Chờ mọi encoder ghi hết, kể cả khi pipeline gặp lỗi."""
+        """Chốt cả clip cuối và chờ đủ video/ảnh/metadata, kể cả khi pipeline gặp lỗi."""
+        if self.closed:
+            if self.worker is not None:
+                self.worker.check()
+            return
+        self.closed = True
         error = None
-        for package_id in list(self.writers):
-            try:
-                self._close_video(package_id)
-            except Exception as exc:
-                error = error or exc
-        self.frames.clear()
+        try:
+            for package in self.packages:
+                if not package.get('submitted'):
+                    self._queue_finish(package, self.fps, self.previous_frame+1)
+        except Exception as exc:
+            error = exc
+        finally:
+            if self.worker is not None:
+                try:
+                    self.worker.close()
+                except Exception as exc:
+                    error = error or exc
+            for writer in self.writers.values():
+                try:
+                    writer.release()
+                except Exception as exc:
+                    error = error or exc
+            self.writers.clear()
+            self.frames.clear()
         if error is not None:
             raise error
 
-    def _seal(self, package, fps):
+    def _seal(self, package, fps, events):
         started = time.perf_counter()
         folder = self.output / f"alert_{package['package_id']:06d}"
         folder.mkdir(exist_ok=True)
-        ids = {e['group_id'] for e in self.events if package['start_frame'] <= e['alert_frame'] < package['stop_frame']}
+        ids = {e['group_id'] for e in events if package['start_frame'] <= e['alert_frame'] < package['stop_frame']}
         evidence, selected = {}, {}
         for gid in ids:
             durations = {}
@@ -214,7 +265,7 @@ class AlertManager:
                 bbox_xyxy=sample['bbox'], image_scope='full_frame', image_source='clip' if self.save_video else 'frame', track_ids=list(sample['signature']),
                 stable_start=run[0][1], stable_end=run[-1][1] + 1/fps,
                 stable_seconds=len(run)/fps, behavior_seconds={name: durations[name] for name in sorted(accepted)},
-                behavior_names=list(dict.fromkeys(e['behavior'] for e in self.events
+                behavior_names=list(dict.fromkeys(e['behavior'] for e in events
                     if e['group_id'] == gid and e['behavior'] in accepted
                     and package['start_frame'] <= e['alert_frame'] < package['stop_frame'])))
         if self.save_video and selected:
@@ -254,14 +305,14 @@ class AlertManager:
             capture.release()
         return images
 
-    def _report(self, package, fps, frame_count):
+    def _report(self, package, fps, frame_count, events):
         duration = frame_count / fps
         folder = self.output / f"alert_{package['package_id']:06d}"
         folder.mkdir(exist_ok=True)
         # Cắt theo chỉ số frame để không lệch keyframe; không lấy frame ngoài khoảng yêu cầu.
         start = package['start_frame']
         stop = min(frame_count, package['stop_frame'])
-        events = [e for e in self.events if start <= e['alert_frame'] < stop]
+        events = [e for e in events if start <= e['alert_frame'] < stop]
         package_events = []
         for event in events:
             evidence = package['evidence'].get(event['group_id'])
@@ -286,16 +337,15 @@ class AlertManager:
 
     def finalize(self, video_path, fps, frame_count):
         self.close()
-        reports = []
-        for package in self.packages:
-            if 'evidence' not in package:
-                self._seal(package, fps)
-            report = self._report(package, fps, frame_count)
-            if self.on_package is not None:
-                self.on_package(self.output / f"alert_{package['package_id']:06d}", report)
-            reports.append(report)
+        reports = [self.reports[key] for key in sorted(self.reports)]
+        for report in reports:
+            for event in report['events']:
+                for original in self.events:
+                    if original['event_id'] == event['event_id'] and event['snapshot']:
+                        original['snapshot'] = f"alert_{report['package_id']:06d}/{event['snapshot']}"
         summary = dict(event_count=self.event_count, package_count=self.package_count, save_video=self.save_video,
-                       events=self.events, packages=reports, encoder_workers=self.video_stats)
+                       events=self.events, packages=reports, encoder_workers=self.video_stats,
+                       evidence_worker=dict(wait_seconds=self.worker.wait_seconds, run_seconds=self.worker.run_seconds) if self.worker else {})
         if self.on_package is None:
             (self.output/'index.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
         return summary
